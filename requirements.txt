@@ -1,0 +1,9 @@
+# Optional dependencies for plantNet scripts
+#
+# Most scripts use only Python standard library and require no installation.
+# Only the image downloader requires external dependencies.
+#
+# Install with: pip install -r requirements-scripts.txt
+
+# Required for download_image.py
+requests>=2.31.0

@@ -7,3 +7,5 @@ plantnet_gbif/*
 !/plantnet_gbif/.gitkeep
 
 .DS_Store
+
+__pycache__
