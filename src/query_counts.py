@@ -47,21 +47,26 @@ def cmd_summary(parser):
     parser.print_summary()
 
 
-def cmd_search(parser, pattern, dataset):
+def cmd_search(parser, pattern, dataset, names_only=False):
     """Search for directories matching a pattern."""
-    print_header(f"SEARCH RESULTS: '{pattern}'")
-
     results = parser.search_directories(pattern, dataset)
 
     if not results:
-        print(f"\nNo directories found matching '{pattern}' in {dataset} dataset")
+        if not names_only:
+            print(f"\nNo directories found matching '{pattern}' in {dataset} dataset")
         return
-
-    print(f"\nFound {len(results)} matching directories in {dataset} dataset:")
-    print()
 
     # Sort by count descending
     sorted_results = sorted(results.items(), key=lambda x: x[1], reverse=True)
+
+    if names_only:
+        for name, _ in sorted_results:
+            print(name)
+        return
+
+    print_header(f"SEARCH RESULTS: '{pattern}'")
+    print(f"\nFound {len(results)} matching directories in {dataset} dataset:")
+    print()
 
     for i, (name, count) in enumerate(sorted_results, 1):
         print(f"  {i:3d}. {name:<50} {format_number(count):>10} images")
@@ -108,11 +113,16 @@ def cmd_compare(parser, directory):
         print(f"Removed in checking: {format_number(diff)} images ({pct:.1f}%)")
 
 
-def cmd_top(parser, n, dataset):
+def cmd_top(parser, n, dataset, names_only=False):
     """Show top N directories."""
-    print_header(f"TOP {n} DIRECTORIES - {dataset.upper()}")
-
     top = parser.get_top_directories(n, dataset)
+
+    if names_only:
+        for name, _ in top:
+            print(name)
+        return
+
+    print_header(f"TOP {n} DIRECTORIES - {dataset.upper()}")
 
     print()
     print(f"{'Rank':<6} {'Directory':<45} {'Count':>15}")
@@ -143,10 +153,8 @@ def cmd_stats(parser, dataset):
     print(f"{'Empty Directories':<30} {format_number(len(empty)):>20}")
 
 
-def cmd_list(parser, dataset, min_count, max_count):
+def cmd_list(parser, dataset, min_count, max_count, names_only=False):
     """List directories with optional filtering."""
-    print_header(f"DIRECTORY LIST - {dataset.upper()}")
-
     data = {
         "original": parser.get_original(),
         "checked": parser.get_checked(),
@@ -162,8 +170,17 @@ def cmd_list(parser, dataset, min_count, max_count):
     }
 
     if not filtered:
-        print("\nNo directories match the specified filters")
+        if not names_only:
+            print("\nNo directories match the specified filters")
         return
+
+    # Sort by name
+    if names_only:
+        for name in sorted(filtered.keys()):
+            print(name)
+        return
+
+    print_header(f"DIRECTORY LIST - {dataset.upper()}")
 
     print()
     if min_count or max_count:
@@ -178,7 +195,6 @@ def cmd_list(parser, dataset, min_count, max_count):
     print(f"Found {len(filtered)} directories:")
     print()
 
-    # Sort by name
     for name, count in sorted(filtered.items()):
         print(f"  {name:<50} {format_number(count):>10}")
 
@@ -269,15 +285,21 @@ def cmd_compare_datasets(parser):
     )
 
 
-def cmd_empty(parser, dataset):
+def cmd_empty(parser, dataset, names_only=False):
     """List empty directories."""
-    print_header(f"EMPTY DIRECTORIES - {dataset.upper()}")
-
     empty = parser.get_empty_directories(dataset)
 
     if not empty:
-        print(f"\nNo empty directories in {dataset} dataset")
+        if not names_only:
+            print(f"\nNo empty directories in {dataset} dataset")
         return
+
+    if names_only:
+        for name in sorted(empty):
+            print(name)
+        return
+
+    print_header(f"EMPTY DIRECTORIES - {dataset.upper()}")
 
     print()
     print(f"Found {len(empty)} empty directories:")
@@ -342,6 +364,11 @@ Examples:
 
     # Options
     parser_obj.add_argument(
+        "--names-only",
+        action="store_true",
+        help="Output only directory names (one per line, no formatting)",
+    )
+    parser_obj.add_argument(
         "--dataset",
         choices=["original", "checked", "unchecked"],
         default="original",
@@ -399,19 +426,21 @@ Examples:
             cmd_summary(parser)
 
         if args.search:
-            cmd_search(parser, args.search, args.dataset)
+            cmd_search(parser, args.search, args.dataset, args.names_only)
 
         if args.compare:
             cmd_compare(parser, args.compare)
 
         if args.top:
-            cmd_top(parser, args.top, args.dataset)
+            cmd_top(parser, args.top, args.dataset, args.names_only)
 
         if args.stats:
             cmd_stats(parser, args.stats)
 
         if args.list:
-            cmd_list(parser, args.dataset, args.min_count, args.max_count)
+            cmd_list(
+                parser, args.dataset, args.min_count, args.max_count, args.names_only
+            )
 
         if args.info:
             cmd_info(parser, args.info)
@@ -420,9 +449,10 @@ Examples:
             cmd_compare_datasets(parser)
 
         if args.empty:
-            cmd_empty(parser, args.dataset)
+            cmd_empty(parser, args.dataset, args.names_only)
 
-        print()  # Final newline
+        if not args.names_only:
+            print()  # Final newline
 
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
