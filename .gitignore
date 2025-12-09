@@ -1,0 +1,9 @@
+.venv
+data/*
+!/data/.gitkeep
+
+# plantnet_gbif can't be committed legally, you'll need to get your own. Process is easy, see README.md
+plantnet_gbif/*
+!/plantnet_gbif/.gitkeep
+
+.DS_Store
