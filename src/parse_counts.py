@@ -66,13 +66,24 @@ class CountsParser:
                     directory = row["Directory"]
                     count = int(row["Image Count"])
                     data[directory] = count
-                    print(f"parsed directory: {directory}, count: {count}")
                 except (ValueError, KeyError):
                     # skip rows with invalid data (like separator rows with "---")
-                    print(f"row failed {row}")
                     continue
 
-        return data
+        # logic for removing unwanted directories from stats
+        bad_directories = [
+            "__results",
+            "$RECYCLE.BIN",
+            "ProfileImages - Copy",
+            "__results",
+            "System Volume Information",
+        ]
+
+        return {
+            k: v
+            for k, v in data.items()
+            if k not in bad_directories and not k.startswith("TOTAL")
+        }
 
     def load_original(self) -> dict[str, int]:
         """load and return the original image counts."""
@@ -144,7 +155,7 @@ class CountsParser:
         }
 
         if dataset not in data_map:
-            raise valueerror(
+            raise ValueError(
                 f"invalid dataset: {dataset}. must be one of {list(data_map.keys())}"
             )
 
