@@ -121,6 +121,7 @@ class CountsDatabaseBuilder:
             "$RECYCLE.BIN",
             "ProfileImages - Copy",
             "System Volume Information",
+            "Magician Launcher.app",
         ]
 
         return {

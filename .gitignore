@@ -9,3 +9,6 @@ plantnet_gbif/*
 .DS_Store
 
 __pycache__
+
+# databases
+*.db
