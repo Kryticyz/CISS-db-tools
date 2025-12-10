@@ -21,11 +21,10 @@ def get_filename_from_url(url):
     parsed_url = urlparse(url)
     path = unquote(parsed_url.path)
     filename = os.path.basename(path)
-    print(f"Tried to use filename {filename}")
 
     # If no filename found or it doesn't have an extension, generate one
     if not filename or "." not in filename:
-        filename = "downloaded_image.jpg"
+        filename = f"{filename}.jpg"
 
     return filename
 
