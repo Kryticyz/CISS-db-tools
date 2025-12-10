@@ -77,11 +77,11 @@ def download_image(url, output_dir="./data"):
         return filepath
 
     except requests.exceptions.RequestException as e:
-        print(f"Error downloading image: {e}")
-        sys.exit(1)
+        # Re-raise exception to be handled by caller
+        raise
     except Exception as e:
-        print(f"Unexpected error: {e}")
-        sys.exit(1)
+        # Re-raise exception to be handled by caller
+        raise
 
 
 def main():

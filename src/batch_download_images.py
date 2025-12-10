@@ -6,6 +6,7 @@ images to species-specific subdirectories.
 """
 
 import argparse
+import random
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,12 +20,6 @@ except ImportError:
     print(
         "Make sure download_image.py is in the same directory or in your Python path."
     )
-    sys.exit(1)
-
-try:
-    import requests
-except ImportError:
-    print("Error: requests library not found. Install it with: pip install requests")
     sys.exit(1)
 
 
@@ -64,30 +59,90 @@ def read_urls_from_file(filepath):
         return []
 
 
-def download_single_image(url, output_dir, index, total):
+def download_single_image(url, output_dir, index, total, max_retries=3):
     """
-    Download a single image with error handling.
+    Download a single image with error handling and retry logic.
 
     Args:
         url: URL to download
         output_dir: Directory to save the image
         index: Current image number
         total: Total number of images
+        max_retries: Maximum number of retry attempts (default: 3)
 
     Returns:
         Tuple of (success, url, filepath or error_message)
     """
-    try:
-        print(f"  [{index}/{total}] Downloading: {url}")
-        filepath = download_image(url, output_dir)
-        return (True, url, filepath)
-    except Exception as e:
-        error_msg = str(e)
-        print(f"  ✗ Failed to download {url}: {error_msg}")
-        return (False, url, error_msg)
+    last_error = None
+
+    for attempt in range(max_retries):
+        try:
+            if attempt == 0:
+                print(f"  [{index}/{total}] Downloading: {url}")
+            else:
+                print(f"  [{index}/{total}] Retry {attempt}/{max_retries - 1}: {url}")
+
+            filepath = download_image(url, output_dir)
+            return (True, url, filepath)
+
+        except requests.exceptions.SSLError as e:
+            last_error = f"SSL Error: {str(e)}"
+            # SSL errors are usually not transient, don't retry
+            print(f"  ✗ SSL Error downloading {url}: {last_error}")
+            return (False, url, last_error)
+
+        except requests.exceptions.ConnectionError as e:
+            last_error = f"Connection Error: {str(e)}"
+            # Connection errors might be transient, retry with backoff
+            if attempt < max_retries - 1:
+                backoff = (2**attempt) + random.uniform(0, 1)
+                print(
+                    f"  ⚠ Connection Error (attempt {attempt + 1}/{max_retries}), retrying in {backoff:.1f}s..."
+                )
+                time.sleep(backoff)
+            else:
+                print(
+                    f"  ✗ Connection Error downloading {url} after {max_retries} attempts: {last_error}"
+                )
+
+        except requests.exceptions.Timeout as e:
+            last_error = f"Timeout Error: {str(e)}"
+            # Timeouts are often transient, retry with backoff
+            if attempt < max_retries - 1:
+                backoff = (2**attempt) + random.uniform(0, 1)
+                print(
+                    f"  ⚠ Timeout (attempt {attempt + 1}/{max_retries}), retrying in {backoff:.1f}s..."
+                )
+                time.sleep(backoff)
+            else:
+                print(
+                    f"  ✗ Timeout downloading {url} after {max_retries} attempts: {last_error}"
+                )
+
+        except requests.exceptions.RequestException as e:
+            last_error = f"Request Error: {str(e)}"
+            # Generic request errors might be transient
+            if attempt < max_retries - 1:
+                backoff = (2**attempt) + random.uniform(0, 1)
+                print(
+                    f"  ⚠ Request Error (attempt {attempt + 1}/{max_retries}), retrying in {backoff:.1f}s..."
+                )
+                time.sleep(backoff)
+            else:
+                print(
+                    f"  ✗ Request Error downloading {url} after {max_retries} attempts: {last_error}"
+                )
+
+        except Exception as e:
+            last_error = f"Unexpected Error: {str(e)}"
+            print(f"  ✗ Failed to download {url}: {last_error}")
+            return (False, url, last_error)
+
+    # If we exhausted all retries
+    return (False, url, last_error)
 
 
-def batch_download(urls, output_dir="./dump", max_workers=5, delay=0):
+def batch_download(urls, output_dir="./dump", max_workers=5, delay=0, max_retries=3):
     """
     Download multiple images from a list of URLs.
 
@@ -96,6 +151,7 @@ def batch_download(urls, output_dir="./dump", max_workers=5, delay=0):
         output_dir: Directory to save images
         max_workers: Number of concurrent downloads (default: 5)
         delay: Delay in seconds between downloads (default: 0)
+        max_retries: Maximum number of retry attempts per URL (default: 3)
 
     Returns:
         Dictionary with success and failure counts
@@ -112,7 +168,9 @@ def batch_download(urls, output_dir="./dump", max_workers=5, delay=0):
     if max_workers == 1:
         # Sequential download
         for i, url in enumerate(urls, 1):
-            success, url, result = download_single_image(url, output_dir, i, total)
+            success, url, result = download_single_image(
+                url, output_dir, i, total, max_retries
+            )
             if success:
                 successful.append((url, result))
             else:
@@ -126,7 +184,9 @@ def batch_download(urls, output_dir="./dump", max_workers=5, delay=0):
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all download tasks
             future_to_url = {
-                executor.submit(download_single_image, url, output_dir, i, total): (
+                executor.submit(
+                    download_single_image, url, output_dir, i, total, max_retries
+                ): (
                     i,
                     url,
                 )
@@ -213,6 +273,7 @@ def process_single_species(
     max_workers,
     delay,
     limit_per_species,
+    max_retries=3,
 ):
     """
     Process a single species URL file and download its images.
@@ -225,6 +286,7 @@ def process_single_species(
         max_workers: Number of concurrent downloads
         delay: Delay between downloads
         limit_per_species: Optional limit on URLs per species
+        max_retries: Maximum number of retry attempts per URL
 
     Returns:
         Tuple of (species_name, results_dict)
@@ -238,7 +300,7 @@ def process_single_species(
     # Read URLs from file
     urls = read_urls_from_file(url_file)
     if not urls:
-        print(f"  No valid URLs found, skipping...")
+        print("  No valid URLs found, skipping...")
         return (species_name, None)
 
     # Apply limit if specified
@@ -255,6 +317,7 @@ def process_single_species(
         output_dir=str(species_output_dir),
         max_workers=max_workers,
         delay=delay,
+        max_retries=max_retries,
     )
 
     # Print species summary
@@ -273,6 +336,7 @@ def process_directory(
     limit_per_species=None,
     species_filter=None,
     parallel_species=False,
+    max_retries=3,
 ):
     """
     Process all URL files in a directory, downloading images for each species.
@@ -285,6 +349,7 @@ def process_directory(
         limit_per_species: Optional limit on URLs per species
         species_filter: Optional list of species names to process (if None, process all)
         parallel_species: If True, process species files in parallel (one worker per species)
+        max_retries: Maximum number of retry attempts per URL
 
     Returns:
         Dictionary with overall results
@@ -304,7 +369,7 @@ def process_directory(
                 filtered_files.append(f)
         url_files = filtered_files
         if not url_files:
-            print(f"Error: No matching species found for filter")
+            print("Error: No matching species found for filter")
             sys.exit(1)
 
     total_species = len(url_files)
@@ -331,7 +396,7 @@ def process_directory(
 
     if parallel_species:
         # Parallel species processing - one worker thread per species
-        print(f"Processing species in parallel (one worker per species)...\n")
+        print("Processing species in parallel (one worker per species)...\n")
 
         with ThreadPoolExecutor(max_workers=total_species) as executor:
             # Submit all species processing tasks
@@ -345,6 +410,7 @@ def process_directory(
                     max_workers,
                     delay,
                     limit_per_species,
+                    max_retries,
                 ): url_file
                 for i, url_file in enumerate(url_files, 1)
             }
@@ -383,6 +449,7 @@ def process_directory(
                 max_workers,
                 delay,
                 limit_per_species,
+                max_retries,
             )
 
             if results is None:
@@ -452,6 +519,16 @@ Examples:
 
   # Save failed URLs to a file for retry
   python src/batch_download_images.py species_urls --save-failed failed.txt
+
+Troubleshooting:
+  If you encounter SSL errors (e.g., "Max retries exceeded", "SSLError"):
+  - Reduce concurrent workers (--workers 2 or --workers 1)
+  - Add delay between requests (--delay 1 or higher)
+  - Avoid --parallel-species if the server is rate-limiting
+  - Retry failed URLs later using the --save-failed output file
+
+  Example for problematic servers:
+  python src/batch_download_images.py species_urls --workers 2 --delay 2 --save-failed failed.txt
         """,
     )
 
@@ -500,6 +577,12 @@ Examples:
         action="store_true",
         help="Process species files in parallel (one worker thread per species)",
     )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=3,
+        help="Maximum number of retry attempts for failed downloads (default: 3)",
+    )
 
     args = parser.parse_args()
 
@@ -512,6 +595,7 @@ Examples:
         limit_per_species=args.limit,
         species_filter=args.species,
         parallel_species=args.parallel_species,
+        max_retries=args.max_retries,
     )
 
     # Save failed URLs if requested
@@ -519,7 +603,8 @@ Examples:
         with open(args.save_failed, "w") as f:
             f.write("# Failed URLs from batch download\n")
             f.write(f"# Source directory: {args.url_dir}\n")
-            f.write(f"# Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            f.write(f"# Date: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"# Total failed: {len(results['all_failed'])}\n\n")
 
             current_species = None
             for species, url, error in results["all_failed"]:
@@ -528,7 +613,8 @@ Examples:
                     current_species = species
                 f.write(f"{url}\n")
                 f.write(f"# Error: {error}\n")
-        print(f"Failed URLs saved to: {args.save_failed}")
+        print(f"\nFailed URLs saved to: {args.save_failed}")
+        print(f"Total failed: {len(results['all_failed'])}")
 
     # Exit with error code if any downloads failed
     if results["total_failed"] > 0:
