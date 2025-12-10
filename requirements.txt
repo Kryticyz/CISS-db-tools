@@ -3,7 +3,10 @@
 # Most scripts use only Python standard library and require no installation.
 # Only the image downloader requires external dependencies.
 #
-# Install with: pip install -r requirements-scripts.txt
+# Install with: pip install -r requirements.txt
 
 # Required for download_image.py
 requests>=2.31.0
+
+# Required for find_synonyms.py (Claude API with web search)
+anthropic>=0.40.0
