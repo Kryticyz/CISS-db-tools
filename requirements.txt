@@ -10,3 +10,7 @@ requests>=2.31.0
 
 # Required for find_synonyms.py (Claude API with web search)
 anthropic>=0.40.0
+
+# Required for image deduplication (deduplicate_images.py, species_pipeline.py)
+Pillow>=10.0.0
+imagehash>=4.3.0
