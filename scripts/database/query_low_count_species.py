@@ -124,8 +124,8 @@ def get_gbif_image_counts(gbif_db: str, species_list: List[str]) -> Dict[str, in
 
 
 def analyze_low_count_species(
-    counts_db="./plantnet_counts.db",
-    gbif_db="./plantnet_gbif.db",
+    counts_db="./data/databases/plantnet_counts.db",
+    gbif_db="./data/databases/plantnet_gbif.db",
     threshold=400,
     dataset="checked",
     output_file=None,
@@ -335,14 +335,14 @@ Examples:
 
     parser.add_argument(
         "--counts-db",
-        default="./plantnet_counts.db",
-        help="Path to counts database (default: ./plantnet_counts.db)",
+        default="./data/databases/plantnet_counts.db",
+        help="Path to counts database (default: ./data/databases/plantnet_counts.db)",
     )
 
     parser.add_argument(
         "--gbif-db",
-        default="./plantnet_gbif.db",
-        help="Path to GBIF database (default: ./plantnet_gbif.db)",
+        default="./data/databases/plantnet_gbif.db",
+        help="Path to GBIF database (default: ./data/databases/plantnet_gbif.db)",
     )
 
     parser.add_argument("--output", "-o", help="Export results to CSV file")

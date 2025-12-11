@@ -10,7 +10,10 @@ Usage:
 """
 
 import sys
+from pathlib import Path
 
+# Add scripts/data_processing to path to import parse_gbif
+sys.path.insert(0, str(Path(__file__).parent.parent / "data_processing"))
 from parse_gbif import GBIFParser
 
 
@@ -269,7 +272,7 @@ def main():
     print()
 
     # Initialize parser
-    parser = GBIFParser()
+    parser = GBIFParser(gbif_dir="./data/raw/gbif")
 
     # Track test results
     tests = [

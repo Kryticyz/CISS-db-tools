@@ -535,14 +535,14 @@ Troubleshooting:
     parser.add_argument(
         "url_dir",
         nargs="?",
-        default="./species_urls",
-        help="Directory containing URL text files (default: ./species_urls)",
+        default="./data/processed/species_urls",
+        help="Directory containing URL text files (default: ./data/processed/species_urls)",
     )
     parser.add_argument(
         "-o",
         "--output",
-        default="./dump",
-        help="Base output directory for downloaded images (default: ./dump)",
+        default="./data/images/by_species",
+        help="Base output directory for downloaded images (default: ./data/images/by_species)",
     )
     parser.add_argument(
         "-w",

@@ -123,9 +123,9 @@ def process_species(
 
 def batch_process_species(
     species_list,
-    db_path="./plantnet_gbif.db",
-    output_dir="./species_urls",
-    no_images_file="./no_images.txt",
+    db_path="./data/databases/plantnet_gbif.db",
+    output_dir="./data/processed/species_urls",
+    no_images_file="./data/reports/no_images.txt",
     limit=400,
     prefer_country="AU",
     verbose=True,
@@ -269,13 +269,13 @@ Examples:
     parser.add_argument(
         "-o",
         "--output",
-        default="./species_urls",
-        help="Output directory for URL files (default: ./species_urls)",
+        default="./data/processed/species_urls",
+        help="Output directory for URL files (default: ./data/processed/species_urls)",
     )
     parser.add_argument(
         "--no-images",
-        default="./no_images.txt",
-        help="Output file for species without images (default: ./no_images.txt)",
+        default="./data/reports/no_images.txt",
+        help="Output file for species without images (default: ./data/reports/no_images.txt)",
     )
     parser.add_argument(
         "--limit",
@@ -290,8 +290,8 @@ Examples:
     )
     parser.add_argument(
         "--db-path",
-        default="./plantnet_gbif.db",
-        help="Path to GBIF database (default: ./plantnet_gbif.db)",
+        default="./data/databases/plantnet_gbif.db",
+        help="Path to GBIF database (default: ./data/databases/plantnet_gbif.db)",
     )
     parser.add_argument(
         "--max-species",

@@ -26,7 +26,11 @@ from typing import Optional
 class GBIFDatabaseBuilder:
     """Builder for GBIF SQLite database."""
 
-    def __init__(self, db_path="./plantnet_gbif.db", gbif_dir="./plantnet_gbif"):
+    def __init__(
+        self,
+        db_path="./data/databases/plantnet_gbif.db",
+        gbif_dir="./data/raw/gbif",
+    ):
         """
         Initialize the database builder.
 
@@ -634,13 +638,13 @@ Examples:
     parser.add_argument("--info", action="store_true", help="Show database information")
     parser.add_argument(
         "--db-path",
-        default="./plantnet_gbif.db",
-        help="Path to SQLite database (default: ./plantnet_gbif.db)",
+        default="./data/databases/plantnet_gbif.db",
+        help="Path to SQLite database (default: ./data/databases/plantnet_gbif.db)",
     )
     parser.add_argument(
         "--gbif-dir",
-        default="./plantnet_gbif",
-        help="Path to GBIF data directory (default: ./plantnet_gbif)",
+        default="./data/raw/gbif",
+        help="Path to GBIF data directory (default: ./data/raw/gbif)",
     )
     parser.add_argument(
         "--max-rows",

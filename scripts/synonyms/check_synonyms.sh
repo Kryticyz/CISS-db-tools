@@ -3,8 +3,8 @@
 # Script to check species_synonyms_gbif.json for mismatched query and accepted names
 # Outputs GBIF accepted names where they differ from query names
 
-INPUT_FILE="species_synonyms_gbif.json"
-OUTPUT_FILE="mismatched_species.txt"
+INPUT_FILE="../../data/processed/synonyms/species_synonyms_gbif.json"
+OUTPUT_FILE="../../data/reports/mismatched_species.txt"
 
 # Check if jq is installed
 if ! command -v jq &> /dev/null; then

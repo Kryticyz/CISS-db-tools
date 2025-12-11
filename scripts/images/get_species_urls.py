@@ -36,7 +36,10 @@ def normalize_species_name(name):
 
 
 def get_species_urls(
-    species_name, db_path="./plantnet_gbif.db", limit=400, prefer_country="AU"
+    species_name,
+    db_path="./data/databases/plantnet_gbif.db",
+    limit=400,
+    prefer_country="AU",
 ):
     """
     Fetch image URLs for a given species from GBIF database.
@@ -234,8 +237,8 @@ Examples:
     )
     parser.add_argument(
         "--db-path",
-        default="./plantnet_gbif.db",
-        help="Path to GBIF database (default: ./plantnet_gbif.db)",
+        default="./data/databases/plantnet_gbif.db",
+        help="Path to GBIF database (default: ./data/databases/plantnet_gbif.db)",
     )
     parser.add_argument(
         "--urls-only",

@@ -18,8 +18,11 @@ Usage:
 import argparse
 import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List
 
+# Add scripts/data_processing to path to import parse_gbif
+sys.path.insert(0, str(Path(__file__).parent.parent / "data_processing"))
 from parse_gbif import GBIFParser
 
 
@@ -479,8 +482,8 @@ Examples:
     )
     parser_obj.add_argument(
         "--gbif-dir",
-        default="./plantnet_gbif",
-        help="Path to GBIF directory (default: ./plantnet_gbif)",
+        default="./data/raw/gbif",
+        help="Path to GBIF directory (default: ./data/raw/gbif)",
     )
     parser_obj.add_argument(
         "--max-rows",

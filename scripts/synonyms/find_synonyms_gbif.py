@@ -44,8 +44,8 @@ except ImportError:
     sys.exit(1)
 
 # Configuration
-DEFAULT_INPUT = "no_images.txt"
-DEFAULT_OUTPUT = "species_synonyms_gbif.json"
+DEFAULT_INPUT = "data/reports/no_images.txt"
+DEFAULT_OUTPUT = "data/processed/synonyms/species_synonyms_gbif.json"
 RATE_LIMIT_DELAY = 0.5  # GBIF is generous, but let's be nice
 GBIF_API_BASE = "https://api.gbif.org/v1"
 

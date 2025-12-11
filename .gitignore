@@ -1,18 +1,59 @@
-.venv
-data/*
-!/data/.gitkeep
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
 
-# plantnet_gbif can't be committed legally, you'll need to get your own. Process is easy, see README.md
-plantnet_gbif/*
-!/plantnet_gbif/.gitkeep
-
+# macOS
 .DS_Store
 
-__pycache__
+# Databases - SQLite files (regenerated from source data)
+data/databases/*.db
+data/databases/*.db-journal
 
-# databases
-*.db
+# Raw data - GBIF export data (cannot be committed legally, users must download their own)
+# See docs/GBIF_GUIDE.md for instructions
+data/raw/gbif/*
+!data/raw/gbif/.gitkeep
 
-dump/*
-species_urls/*
-export/*
+# Images - downloaded plant images
+data/images/by_species/*
+data/images/uncategorized/*
+!data/images/by_species/.gitkeep
+!data/images/uncategorized/.gitkeep
+
+# Processed data (can be regenerated)
+data/processed/species_urls/*
+!data/processed/species_urls/.gitkeep
+
+# Reports (generated files)
+data/reports/*.csv
+data/reports/*.md
+data/reports/*.jpg
+data/reports/*.txt
+!data/reports/.gitkeep
+
+# Keep the data directory structure with .gitkeep files
+!data/processed/counts/.gitkeep
+!data/processed/synonyms/.gitkeep
+!data/databases/.gitkeep
+!data/raw/.gitkeep
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.log
+
+# CSV files
+*.csv
+
+# synonyms
+data/processed/synonyms/*

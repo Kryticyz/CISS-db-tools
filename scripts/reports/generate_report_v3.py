@@ -133,13 +133,17 @@ def find_db_match(species_name, db_counts):
 
 
 def main():
-    base_dir = Path(__file__).parent
-    species_list_path = base_dir / "species_list.txt"
-    synonyms_path = base_dir / "species_synonyms_gbif.json"
-    species_urls_dir = base_dir / "species_urls"
-    db_path = base_dir / "plantnet_counts.db"
-    output_csv = base_dir / "species_report_v3.csv"
-    output_report = base_dir / "FINAL_REPORT_v3.md"
+    base_dir = Path(
+        __file__
+    ).parent.parent.parent  # Project root (up from scripts/reports/)
+    species_list_path = base_dir / "data" / "reports" / "species_list.txt"
+    synonyms_path = (
+        base_dir / "data" / "processed" / "synonyms" / "species_synonyms_gbif.json"
+    )
+    species_urls_dir = base_dir / "data" / "processed" / "species_urls"
+    db_path = base_dir / "data" / "databases" / "plantnet_counts.db"
+    output_csv = base_dir / "data" / "reports" / "species_report_v3.csv"
+    output_report = base_dir / "data" / "reports" / "FINAL_REPORT_v3.md"
 
     # Load data
     print("Loading data...")

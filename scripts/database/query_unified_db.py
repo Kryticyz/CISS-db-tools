@@ -56,7 +56,11 @@ def print_subheader(text, char="-"):
 class UnifiedQueryTool:
     """Query tool for unified GBIF and counts databases."""
 
-    def __init__(self, gbif_db="./plantnet_gbif.db", counts_db="./plantnet_counts.db"):
+    def __init__(
+        self,
+        gbif_db="./data/databases/plantnet_gbif.db",
+        counts_db="./data/databases/plantnet_counts.db",
+    ):
         """
         Initialize query tool.
 
@@ -619,13 +623,13 @@ Examples:
     )
     parser.add_argument(
         "--gbif-db",
-        default="./plantnet_gbif.db",
-        help="Path to GBIF database (default: ./plantnet_gbif.db)",
+        default="./data/databases/plantnet_gbif.db",
+        help="Path to GBIF database (default: ./data/databases/plantnet_gbif.db)",
     )
     parser.add_argument(
         "--counts-db",
-        default="./plantnet_counts.db",
-        help="Path to counts database (default: ./plantnet_counts.db)",
+        default="./data/databases/plantnet_counts.db",
+        help="Path to counts database (default: ./data/databases/plantnet_counts.db)",
     )
 
     args = parser.parse_args()

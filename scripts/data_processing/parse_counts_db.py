@@ -26,7 +26,11 @@ from typing import Dict, List, Optional
 class CountsDatabaseBuilder:
     """Builder for image counts SQLite database."""
 
-    def __init__(self, db_path="./plantnet_counts.db", counts_dir="./counts"):
+    def __init__(
+        self,
+        db_path="./data/databases/plantnet_counts.db",
+        counts_dir="./data/processed/counts",
+    ):
         """
         Initialize the database builder.
 
@@ -402,13 +406,13 @@ Examples:
     parser.add_argument("--info", action="store_true", help="Show database information")
     parser.add_argument(
         "--db-path",
-        default="./plantnet_counts.db",
-        help="Path to SQLite database (default: ./plantnet_counts.db)",
+        default="./data/databases/plantnet_counts.db",
+        help="Path to SQLite database (default: ./data/databases/plantnet_counts.db)",
     )
     parser.add_argument(
         "--counts-dir",
-        default="./counts",
-        help="Path to counts directory (default: ./counts)",
+        default="./data/processed/counts",
+        help="Path to counts directory (default: ./data/processed/counts)",
     )
 
     args = parser.parse_args()

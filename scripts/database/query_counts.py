@@ -16,7 +16,10 @@ Usage:
 
 import argparse
 import sys
+from pathlib import Path
 
+# Add scripts/data_processing to path to import parse_counts
+sys.path.insert(0, str(Path(__file__).parent.parent / "data_processing"))
 from parse_counts import CountsParser
 
 
@@ -382,8 +385,8 @@ Examples:
     )
     parser_obj.add_argument(
         "--counts-dir",
-        default="./counts",
-        help="Path to counts directory (default: ./counts)",
+        default="./data/processed/counts",
+        help="Path to counts directory (default: ./data/processed/counts)",
     )
 
     args = parser_obj.parse_args()
