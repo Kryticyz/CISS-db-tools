@@ -81,6 +81,58 @@ def get_species_list() -> List[str]:
     return species
 
 
+def get_species_hashes(species_name: str, hash_size: int) -> Dict[str, Any]:
+    """
+    Get image hashes for a species (without grouping).
+
+    Returns dict with hash values for each image.
+    """
+    if BASE_DIR is None:
+        return {"error": "Base directory not configured"}
+
+    species_dir = BASE_DIR / species_name
+    if not species_dir.exists():
+        return {"error": f"Species directory not found: {species_name}"}
+
+    image_files = get_image_files(species_dir)
+
+    # Check cache
+    cache_key = f"{species_name}_{hash_size}"
+    if cache_key not in HASH_CACHE:
+        # Compute hashes
+        hash_map: Dict[Path, str] = {}
+
+        for img_path in image_files:
+            result = compute_image_hash(img_path, hash_size, True)
+            if result:
+                path, img_hash, error = result
+                if not error and img_hash:
+                    hash_map[path] = img_hash
+
+        HASH_CACHE[cache_key] = hash_map
+    else:
+        hash_map = HASH_CACHE[cache_key]
+
+    # Build image info with hashes
+    images = []
+    for img_path in image_files:
+        img_info = {
+            "filename": img_path.name,
+            "size": img_path.stat().st_size,
+            "path": f"/image/{species_name}/{img_path.name}",
+            "hash": hash_map.get(img_path, None),
+        }
+        images.append(img_info)
+
+    return {
+        "species_name": species_name,
+        "hash_size": hash_size,
+        "total_images": len(image_files),
+        "hashed_images": len(hash_map),
+        "images": images,
+    }
+
+
 def get_species_duplicates(
     species_name: str, hash_size: int, hamming_threshold: int
 ) -> Dict[str, Any]:
@@ -103,6 +155,7 @@ def get_species_duplicates(
             "species_name": species_name,
             "total_images": len(image_files),
             "duplicate_groups": [],
+            "images": [],
             "message": "Not enough images for duplicate detection",
         }
 
@@ -126,6 +179,17 @@ def get_species_duplicates(
     else:
         hash_map = HASH_CACHE[cache_key]
 
+    # Build image info with hashes (for client-side caching)
+    images = []
+    for img_path in image_files:
+        img_info = {
+            "filename": img_path.name,
+            "size": img_path.stat().st_size,
+            "path": f"/image/{species_name}/{img_path.name}",
+            "hash": hash_map.get(img_path, None),
+        }
+        images.append(img_info)
+
     # Find duplicate groups with current threshold
     duplicate_groups = find_duplicate_groups(hash_map, hamming_threshold)
 
@@ -140,12 +204,14 @@ def get_species_duplicates(
                 "filename": keep.name,
                 "size": keep.stat().st_size,
                 "path": f"/image/{species_name}/{keep.name}",
+                "hash": hash_map.get(keep, None),
             },
             "duplicates": [
                 {
                     "filename": p.name,
                     "size": p.stat().st_size,
                     "path": f"/image/{species_name}/{p.name}",
+                    "hash": hash_map.get(p, None),
                 }
                 for p in delete
             ],
@@ -161,6 +227,7 @@ def get_species_duplicates(
         "total_duplicates": sum(len(g["duplicates"]) for g in groups),
         "hash_size": hash_size,
         "hamming_threshold": hamming_threshold,
+        "images": images,
     }
 
 
@@ -824,6 +891,37 @@ def generate_html_page() -> str:
             color: #4ecca3;
             margin-right: 5px;
         }
+
+        .cache-controls {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .cache-controls button {
+            font-size: 12px;
+            padding: 5px 10px;
+        }
+
+        #cacheInfo {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .cache-status {
+            font-size: 12px;
+            color: #4ecca3;
+            margin-left: 10px;
+        }
+
+        .cache-status.from-cache {
+            color: #4ecca3;
+        }
+
+        .cache-status.from-server {
+            color: #ff9800;
+        }
     </style>
 </head>
 <body>
@@ -869,6 +967,12 @@ def generate_html_page() -> str:
                 Higher values = more permissive (may catch more duplicates but also false positives).
                 <br>
                 <strong>Hash Size:</strong> Higher values = more precise hashing but slower computation.
+                <br>
+                <strong>Cache:</strong> Image hashes are cached in your browser. Changing threshold uses cached data instantly.
+            </div>
+            <div class="cache-controls">
+                <button class="secondary" onclick="clearHashCache()">Clear Cache</button>
+                <span id="cacheInfo">Cache: checking...</span>
             </div>
         </header>
 
@@ -879,6 +983,7 @@ def generate_html_page() -> str:
                 <button class="secondary" onclick="resetConfirmations()">Reset</button>
                 <button class="secondary" onclick="collapseAllSpecies()">Collapse All</button>
                 <button class="secondary" onclick="expandAllSpecies()">Expand All</button>
+                <span class="cache-status" id="cacheStatus"></span>
             </div>
             <div class="action-bar-right">
                 <button class="delete-btn" id="deleteBtn" onclick="showDeleteModal()" disabled>
@@ -968,9 +1073,182 @@ def generate_html_page() -> str:
         let currentMode = 'single';
         let currentData = null;
         let confirmedGroups = new Set(); // Format: "speciesName:groupId"
+        const CACHE_PREFIX = 'plantnet_hashes_';
+        const CACHE_VERSION = 'v1';
 
         // Load species list on page load
-        document.addEventListener('DOMContentLoaded', loadSpecies);
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSpecies();
+            updateCacheInfo();
+        });
+
+        // ==================== LocalStorage Cache Functions ====================
+
+        function getCacheKey(speciesName, hashSize) {
+            return `${CACHE_PREFIX}${CACHE_VERSION}_${speciesName}_${hashSize}`;
+        }
+
+        function getCachedHashes(speciesName, hashSize) {
+            try {
+                const key = getCacheKey(speciesName, hashSize);
+                const data = localStorage.getItem(key);
+                if (data) {
+                    return JSON.parse(data);
+                }
+            } catch (e) {
+                console.warn('Failed to read from cache:', e);
+            }
+            return null;
+        }
+
+        function setCachedHashes(speciesName, hashSize, images) {
+            try {
+                const key = getCacheKey(speciesName, hashSize);
+                const cacheData = {
+                    timestamp: Date.now(),
+                    images: images
+                };
+                localStorage.setItem(key, JSON.stringify(cacheData));
+            } catch (e) {
+                console.warn('Failed to write to cache:', e);
+            }
+        }
+
+        function clearHashCache() {
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith(CACHE_PREFIX)) {
+                    keys.push(key);
+                }
+            }
+            keys.forEach(key => localStorage.removeItem(key));
+            updateCacheInfo();
+            alert(`Cleared ${keys.length} cached entries`);
+        }
+
+        function updateCacheInfo() {
+            let count = 0;
+            let totalSize = 0;
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith(CACHE_PREFIX)) {
+                    count++;
+                    totalSize += localStorage.getItem(key).length;
+                }
+            }
+            const sizeKB = (totalSize / 1024).toFixed(1);
+            document.getElementById('cacheInfo').textContent =
+                `Cache: ${count} species (${sizeKB} KB)`;
+        }
+
+        function setCacheStatus(fromCache, speciesCount = 1) {
+            const el = document.getElementById('cacheStatus');
+            if (fromCache) {
+                el.textContent = `⚡ Loaded from cache`;
+                el.className = 'cache-status from-cache';
+            } else {
+                el.textContent = `📡 Fetched from server`;
+                el.className = 'cache-status from-server';
+            }
+        }
+
+        // ==================== Client-side Duplicate Grouping ====================
+
+        function hammingDistance(hash1, hash2) {
+            if (!hash1 || !hash2 || hash1.length !== hash2.length) {
+                return Infinity;
+            }
+            let distance = 0;
+            for (let i = 0; i < hash1.length; i++) {
+                const diff = parseInt(hash1[i], 16) ^ parseInt(hash2[i], 16);
+                distance += (diff & 1) + ((diff >> 1) & 1) + ((diff >> 2) & 1) + ((diff >> 3) & 1);
+            }
+            return distance;
+        }
+
+        function findDuplicateGroupsClient(images, threshold) {
+            const validImages = images.filter(img => img.hash);
+            const n = validImages.length;
+            if (n < 2) return [];
+
+            // Union-Find
+            const parent = Array.from({length: n}, (_, i) => i);
+            const rank = new Array(n).fill(0);
+
+            function find(x) {
+                if (parent[x] !== x) parent[x] = find(parent[x]);
+                return parent[x];
+            }
+
+            function union(x, y) {
+                const px = find(x), py = find(y);
+                if (px === py) return;
+                if (rank[px] < rank[py]) {
+                    parent[px] = py;
+                } else if (rank[px] > rank[py]) {
+                    parent[py] = px;
+                } else {
+                    parent[py] = px;
+                    rank[px]++;
+                }
+            }
+
+            // Compare all pairs
+            for (let i = 0; i < n; i++) {
+                for (let j = i + 1; j < n; j++) {
+                    const dist = hammingDistance(validImages[i].hash, validImages[j].hash);
+                    if (dist <= threshold) {
+                        union(i, j);
+                    }
+                }
+            }
+
+            // Group by root
+            const groups = new Map();
+            for (let i = 0; i < n; i++) {
+                const root = find(i);
+                if (!groups.has(root)) groups.set(root, []);
+                groups.get(root).push(validImages[i]);
+            }
+
+            // Filter to groups with duplicates and format
+            const result = [];
+            let groupId = 1;
+            for (const [_, group] of groups) {
+                if (group.length > 1) {
+                    // Sort by size descending, then name
+                    group.sort((a, b) => b.size - a.size || a.filename.localeCompare(b.filename));
+                    const keep = group[0];
+                    const duplicates = group.slice(1);
+                    result.push({
+                        group_id: groupId++,
+                        keep: keep,
+                        duplicates: duplicates,
+                        total_in_group: group.length
+                    });
+                }
+            }
+            return result;
+        }
+
+        function processWithCachedHashes(speciesName, cachedData, hashSize, threshold) {
+            const images = cachedData.images;
+            const duplicateGroups = findDuplicateGroupsClient(images, threshold);
+            const totalDuplicates = duplicateGroups.reduce((sum, g) => sum + g.duplicates.length, 0);
+
+            return {
+                species_name: speciesName,
+                total_images: images.length,
+                hashed_images: images.filter(img => img.hash).length,
+                duplicate_groups: duplicateGroups,
+                total_duplicates: totalDuplicates,
+                hash_size: hashSize,
+                hamming_threshold: threshold,
+                images: images,
+                from_cache: true
+            };
+        }
 
         function setMode(mode) {
             currentMode = mode;
@@ -1037,18 +1315,42 @@ def generate_html_page() -> str:
                 return;
             }
 
-            const hashSize = document.getElementById('hashSize').value;
-            const threshold = document.getElementById('hammingThreshold').value;
+            const hashSize = parseInt(document.getElementById('hashSize').value);
+            const threshold = parseInt(document.getElementById('hammingThreshold').value);
 
+            document.getElementById('stats').style.display = 'none';
+            document.getElementById('actionBar').style.display = 'none';
+            document.getElementById('analyzeBtn').disabled = true;
+
+            // Check cache first
+            const cachedData = getCachedHashes(species, hashSize);
+            if (cachedData) {
+                document.getElementById('content').innerHTML = `
+                    <div class="loading">
+                        <div class="spinner"></div>
+                        <p>Processing cached data for ${species.replace(/_/g, ' ')}...</p>
+                    </div>
+                `;
+
+                // Small delay to show loading state
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                const data = processWithCachedHashes(species, cachedData, hashSize, threshold);
+                currentData = { mode: 'single', species_results: [data] };
+                displaySingleSpeciesResults(data);
+                setCacheStatus(true);
+                document.getElementById('analyzeBtn').disabled = false;
+                return;
+            }
+
+            // Fetch from server
             document.getElementById('content').innerHTML = `
                 <div class="loading">
                     <div class="spinner"></div>
                     <p>Analyzing images for ${species.replace(/_/g, ' ')}...</p>
+                    <p style="font-size: 12px; margin-top: 10px;">Computing perceptual hashes...</p>
                 </div>
             `;
-            document.getElementById('stats').style.display = 'none';
-            document.getElementById('actionBar').style.display = 'none';
-            document.getElementById('analyzeBtn').disabled = true;
 
             try {
                 const response = await fetch(
@@ -1060,8 +1362,15 @@ def generate_html_page() -> str:
                     throw new Error(data.error);
                 }
 
+                // Cache the hashes for future use
+                if (data.images && data.images.length > 0) {
+                    setCachedHashes(species, hashSize, data.images);
+                    updateCacheInfo();
+                }
+
                 currentData = { mode: 'single', species_results: [data] };
                 displaySingleSpeciesResults(data);
+                setCacheStatus(false);
             } catch (error) {
                 document.getElementById('content').innerHTML = `
                     <div class="error"><strong>Error:</strong> ${error.message}</div>
@@ -1072,34 +1381,118 @@ def generate_html_page() -> str:
         }
 
         async function analyzeAllSpecies() {
-            const hashSize = document.getElementById('hashSize').value;
-            const threshold = document.getElementById('hammingThreshold').value;
+            const hashSize = parseInt(document.getElementById('hashSize').value);
+            const threshold = parseInt(document.getElementById('hammingThreshold').value);
 
-            document.getElementById('content').innerHTML = `
-                <div class="warning-banner">
-                    ⚠️ Scanning all species - this may take several minutes. Please wait...
-                </div>
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>Analyzing images across all species...</p>
-                </div>
-            `;
             document.getElementById('stats').style.display = 'none';
             document.getElementById('actionBar').style.display = 'none';
             document.getElementById('analyzeBtn').disabled = true;
 
+            // Get species list first
+            let speciesList;
             try {
-                const response = await fetch(
-                    `/api/duplicates/all?hash_size=${hashSize}&threshold=${threshold}`
-                );
-                const data = await response.json();
+                const response = await fetch('/api/species');
+                speciesList = await response.json();
+            } catch (error) {
+                document.getElementById('content').innerHTML = `
+                    <div class="error"><strong>Error:</strong> Failed to load species list</div>
+                `;
+                document.getElementById('analyzeBtn').disabled = false;
+                return;
+            }
 
-                if (data.error) {
-                    throw new Error(data.error);
+            // Check which species are cached
+            const cachedSpecies = [];
+            const uncachedSpecies = [];
+            for (const species of speciesList) {
+                if (getCachedHashes(species, hashSize)) {
+                    cachedSpecies.push(species);
+                } else {
+                    uncachedSpecies.push(species);
+                }
+            }
+
+            document.getElementById('content').innerHTML = `
+                <div class="warning-banner">
+                    ⚠️ Scanning ${speciesList.length} species
+                    (${cachedSpecies.length} cached, ${uncachedSpecies.length} to fetch)
+                </div>
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Analyzing images across all species...</p>
+                    <p id="progressText" style="font-size: 12px; margin-top: 10px;">Initializing...</p>
+                </div>
+            `;
+
+            try {
+                const allResults = [];
+                let totalImages = 0;
+                let totalDuplicates = 0;
+                let totalGroups = 0;
+                let speciesWithDuplicates = 0;
+                let processed = 0;
+
+                // Process cached species first (fast)
+                for (const species of cachedSpecies) {
+                    const cachedData = getCachedHashes(species, hashSize);
+                    const data = processWithCachedHashes(species, cachedData, hashSize, threshold);
+
+                    totalImages += data.total_images;
+                    if (data.total_duplicates > 0) {
+                        totalDuplicates += data.total_duplicates;
+                        totalGroups += data.duplicate_groups.length;
+                        speciesWithDuplicates++;
+                        allResults.push(data);
+                    }
+                    processed++;
+                    document.getElementById('progressText').textContent =
+                        `Processing: ${processed}/${speciesList.length} (${species})`;
                 }
 
-                currentData = data;
-                displayAllSpeciesResults(data);
+                // Fetch uncached species from server
+                for (const species of uncachedSpecies) {
+                    document.getElementById('progressText').textContent =
+                        `Fetching: ${processed + 1}/${speciesList.length} (${species})`;
+
+                    const response = await fetch(
+                        `/api/duplicates/${species}?hash_size=${hashSize}&threshold=${threshold}`
+                    );
+                    const data = await response.json();
+
+                    if (!data.error) {
+                        // Cache for future use
+                        if (data.images && data.images.length > 0) {
+                            setCachedHashes(species, hashSize, data.images);
+                        }
+
+                        totalImages += data.total_images;
+                        if (data.total_duplicates > 0) {
+                            totalDuplicates += data.total_duplicates;
+                            totalGroups += data.duplicate_groups.length;
+                            speciesWithDuplicates++;
+                            allResults.push(data);
+                        }
+                    }
+                    processed++;
+                }
+
+                updateCacheInfo();
+
+                const finalData = {
+                    mode: 'all_species',
+                    total_species_scanned: speciesList.length,
+                    species_with_duplicates: speciesWithDuplicates,
+                    total_images: totalImages,
+                    total_duplicates: totalDuplicates,
+                    total_groups: totalGroups,
+                    hash_size: hashSize,
+                    hamming_threshold: threshold,
+                    species_results: allResults,
+                };
+
+                currentData = finalData;
+                displayAllSpeciesResults(finalData);
+                setCacheStatus(uncachedSpecies.length === 0, speciesList.length);
             } catch (error) {
                 document.getElementById('content').innerHTML = `
                     <div class="error"><strong>Error:</strong> ${error.message}</div>
