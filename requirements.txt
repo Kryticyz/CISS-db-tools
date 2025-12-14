@@ -14,3 +14,8 @@ anthropic>=0.40.0
 # Required for image deduplication (deduplicate_images.py, species_pipeline.py)
 Pillow>=10.0.0
 imagehash>=4.3.0
+
+# Required for CNN similarity analysis (cnn_similarity.py)
+# Note: For CPU-only, use: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0
+torchvision>=0.15.0

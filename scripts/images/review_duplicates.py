@@ -16,7 +16,7 @@ Usage:
 Then open http://localhost:8000 in your browser.
 
 Dependencies:
-    pip install Pillow imagehash
+    pip install Pillow imagehash torch torchvision
 """
 
 import argparse
@@ -54,6 +54,26 @@ except ImportError:
     )
 
 
+# Try to import CNN similarity module
+CNN_AVAILABLE = False
+try:
+    from cnn_similarity import (
+        DEFAULT_MODEL,
+        DEFAULT_SIMILARITY_THRESHOLD,
+        compute_cnn_embeddings,
+        cosine_similarity,
+        embeddings_to_json,
+    )
+    from cnn_similarity import (
+        find_similar_groups as find_cnn_similar_groups,
+    )
+
+    CNN_AVAILABLE = True
+except ImportError:
+    DEFAULT_SIMILARITY_THRESHOLD = 0.85
+    DEFAULT_MODEL = "resnet18"
+
+
 # Global configuration
 BASE_DIR: Optional[Path] = None
 CURRENT_CONFIG: Dict[str, Any] = {
@@ -63,6 +83,9 @@ CURRENT_CONFIG: Dict[str, Any] = {
 
 # Cache for computed hashes
 HASH_CACHE: Dict[str, Dict[Path, str]] = {}
+
+# Cache for CNN embeddings
+CNN_CACHE: Dict[str, Dict[Path, List[float]]] = {}
 
 
 def get_species_list() -> List[str]:
@@ -273,6 +296,97 @@ def get_all_species_duplicates(
         "hash_size": hash_size,
         "hamming_threshold": hamming_threshold,
         "species_results": all_results,
+    }
+
+
+def get_species_cnn_similarity(
+    species_name: str, similarity_threshold: float, model_name: str = DEFAULT_MODEL
+) -> Dict[str, Any]:
+    """
+    Get CNN-based similar image groups for a species.
+
+    Returns dict with similar group information.
+    """
+    if not CNN_AVAILABLE:
+        return {"error": "CNN similarity not available. Install torch and torchvision."}
+
+    if BASE_DIR is None:
+        return {"error": "Base directory not configured"}
+
+    species_dir = BASE_DIR / species_name
+    if not species_dir.exists():
+        return {"error": f"Species directory not found: {species_name}"}
+
+    image_files = get_image_files(species_dir)
+
+    if len(image_files) < 2:
+        return {
+            "species_name": species_name,
+            "total_images": len(image_files),
+            "similar_groups": [],
+            "images": [],
+            "message": "Not enough images for similarity detection",
+        }
+
+    # Check cache
+    cache_key = f"{species_name}_{model_name}"
+    if cache_key not in CNN_CACHE:
+        # Compute embeddings
+        embeddings, errors = compute_cnn_embeddings(
+            image_files, model_name, verbose=True
+        )
+        CNN_CACHE[cache_key] = embeddings
+    else:
+        embeddings = CNN_CACHE[cache_key]
+
+    # Build image info with embeddings
+    images = []
+    for img_path in image_files:
+        embedding = embeddings.get(img_path)
+        img_info = {
+            "filename": img_path.name,
+            "size": img_path.stat().st_size,
+            "path": f"/image/{species_name}/{img_path.name}",
+            "embedding": embedding,
+        }
+        images.append(img_info)
+
+    # Find similar groups
+    similar_groups_raw = find_cnn_similar_groups(embeddings, similarity_threshold)
+
+    # Format results
+    groups = []
+    for i, group in enumerate(similar_groups_raw, 1):
+        sorted_group = sorted(group, key=lambda p: (-p.stat().st_size, p.name))
+
+        group_images = []
+        for img_path in sorted_group:
+            group_images.append(
+                {
+                    "filename": img_path.name,
+                    "size": img_path.stat().st_size,
+                    "path": f"/image/{species_name}/{img_path.name}",
+                }
+            )
+
+        groups.append(
+            {
+                "group_id": i,
+                "images": group_images,
+                "count": len(group_images),
+            }
+        )
+
+    return {
+        "species_name": species_name,
+        "total_images": len(image_files),
+        "processed_images": len(embeddings),
+        "similar_groups": groups,
+        "total_in_groups": sum(g["count"] for g in groups),
+        "similarity_threshold": similarity_threshold,
+        "model_name": model_name,
+        "images": images,
+        "cnn_available": True,
     }
 
 
@@ -646,12 +760,41 @@ def generate_html_page() -> str:
             align-items: center;
             flex-wrap: wrap;
             gap: 10px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .group-header:hover {
+            background: #14477a;
         }
 
         .group-header-left {
             display: flex;
             align-items: center;
             gap: 15px;
+        }
+
+        .group-collapse-indicator {
+            font-size: 14px;
+            transition: transform 0.2s;
+            display: inline-block;
+            margin-right: 5px;
+        }
+
+        .duplicate-group.collapsed .group-collapse-indicator {
+            transform: rotate(-90deg);
+        }
+
+        .duplicate-group.collapsed .images-container {
+            display: none;
+        }
+
+        .similar-group.collapsed .group-collapse-indicator {
+            transform: rotate(-90deg);
+        }
+
+        .similar-group.collapsed .images-container {
+            display: none;
         }
 
         .group-title {
@@ -922,6 +1065,118 @@ def generate_html_page() -> str:
         .cache-status.from-server {
             color: #ff9800;
         }
+
+        /* CNN Similar Images Styles */
+        .similar-section {
+            margin-top: 30px;
+            border-top: 3px dashed #ff9800;
+            padding-top: 20px;
+        }
+
+        .similar-section-header {
+            background: linear-gradient(135deg, #ff9800, #f57c00);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .similar-section-header h3 {
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .similar-badge {
+            background: rgba(255,255,255,0.2);
+            padding: 3px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+        }
+
+        .similar-group {
+            background: #1a1a2e;
+            border: 2px solid #ff9800;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+
+        .similar-group .group-header {
+            background: linear-gradient(135deg, #2d2d44, #1a1a2e);
+            border-bottom: 1px solid #ff9800;
+        }
+
+        .similar-group .group-title {
+            color: #ff9800;
+        }
+
+        .similar-group .image-card {
+            border: 2px solid #ff9800;
+        }
+
+        .similar-group .image-status {
+            background: #ff9800;
+            color: #000;
+        }
+
+        .cnn-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .cnn-controls label {
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .cnn-controls input[type="range"] {
+            width: 120px;
+        }
+
+        .cnn-controls .threshold-value {
+            min-width: 40px;
+            text-align: center;
+            font-weight: bold;
+            color: #ff9800;
+        }
+
+        .cnn-loading {
+            text-align: center;
+            padding: 30px;
+            color: #ff9800;
+            font-style: italic;
+        }
+
+        .cnn-unavailable {
+            background: #333;
+            color: #888;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .toggle-cnn {
+            background: #ff9800;
+            color: #000;
+        }
+
+        .toggle-cnn:hover {
+            background: #ffb74d;
+        }
+
+        .toggle-cnn.active {
+            background: #4ecca3;
+        }
     </style>
 </head>
 <body>
@@ -972,7 +1227,15 @@ def generate_html_page() -> str:
             </div>
             <div class="cache-controls">
                 <button class="secondary" onclick="clearHashCache()">Clear Cache</button>
+                <button class="toggle-cnn" id="cnnToggle" onclick="toggleCNN()">🧠 Enable CNN Similarity</button>
                 <span id="cacheInfo">Cache: checking...</span>
+            </div>
+            <div id="cnnControls" class="cnn-controls" style="display: none; margin-top: 10px;">
+                <label>CNN Similarity Threshold:</label>
+                <input type="range" id="cnnThreshold" min="0.5" max="0.99" step="0.01" value="0.85"
+                       oninput="updateCnnThresholdDisplay()" onchange="updateCnnThresholdGroups()">
+                <span class="threshold-value" id="cnnThresholdValue">0.85</span>
+                <span style="font-size: 11px; color: #888;">(Higher = stricter matching)</span>
             </div>
         </header>
 
@@ -981,8 +1244,10 @@ def generate_html_page() -> str:
                 <span class="confirmed-count" id="confirmedCount">0 groups confirmed</span>
                 <button class="confirm-btn" onclick="confirmAll()">✓ Confirm All</button>
                 <button class="secondary" onclick="resetConfirmations()">Reset</button>
-                <button class="secondary" onclick="collapseAllSpecies()">Collapse All</button>
-                <button class="secondary" onclick="expandAllSpecies()">Expand All</button>
+                <button class="secondary" onclick="collapseAllSpecies()">Collapse All Species</button>
+                <button class="secondary" onclick="expandAllSpecies()">Expand All Species</button>
+                <button class="secondary" onclick="collapseAllGroups()">Collapse All Groups</button>
+                <button class="secondary" onclick="expandAllGroups()">Expand All Groups</button>
                 <span class="cache-status" id="cacheStatus"></span>
             </div>
             <div class="action-bar-right">
@@ -1073,14 +1338,89 @@ def generate_html_page() -> str:
         let currentMode = 'single';
         let currentData = null;
         let confirmedGroups = new Set(); // Format: "speciesName:groupId"
+        let cnnEnabled = false;
+        let cnnData = null;
         const CACHE_PREFIX = 'plantnet_hashes_';
+        const CNN_CACHE_PREFIX = 'plantnet_cnn_';
         const CACHE_VERSION = 'v1';
 
         // Load species list on page load
         document.addEventListener('DOMContentLoaded', () => {
             loadSpecies();
             updateCacheInfo();
+            updateCnnThresholdDisplay();
         });
+
+        // ==================== CNN Toggle Functions ====================
+
+        function toggleCNN() {
+            cnnEnabled = !cnnEnabled;
+            const btn = document.getElementById('cnnToggle');
+            const controls = document.getElementById('cnnControls');
+
+            if (cnnEnabled) {
+                btn.textContent = '🧠 CNN Similarity ON';
+                btn.classList.add('active');
+                controls.style.display = 'flex';
+            } else {
+                btn.textContent = '🧠 Enable CNN Similarity';
+                btn.classList.remove('active');
+                controls.style.display = 'none';
+            }
+        }
+
+        function updateCnnThresholdDisplay() {
+            const value = document.getElementById('cnnThreshold').value;
+            document.getElementById('cnnThresholdValue').textContent = value;
+        }
+
+        function updateCnnThresholdGroups() {
+            if (!currentData || currentMode !== 'single') return;
+            if (!cnnEnabled) return;
+
+            const speciesName = currentData.species_results[0]?.species_name;
+            if (!speciesName) return;
+
+            const threshold = parseFloat(document.getElementById('cnnThreshold').value);
+            const cachedCnn = getCachedCnnEmbeddings(speciesName);
+
+            if (cachedCnn) {
+                // Re-group with new threshold using cached data
+                const result = processWithCachedCnnEmbeddings(speciesName, cachedCnn, threshold);
+                displayCnnResults(result);
+                setCacheStatus(true);
+            }
+        }
+
+        function getCnnCacheKey(speciesName) {
+            return `${CNN_CACHE_PREFIX}${CACHE_VERSION}_${speciesName}`;
+        }
+
+        function getCachedCnnEmbeddings(speciesName) {
+            try {
+                const key = getCnnCacheKey(speciesName);
+                const data = localStorage.getItem(key);
+                if (data) {
+                    return JSON.parse(data);
+                }
+            } catch (e) {
+                console.warn('Failed to read CNN cache:', e);
+            }
+            return null;
+        }
+
+        function setCachedCnnEmbeddings(speciesName, images) {
+            try {
+                const key = getCnnCacheKey(speciesName);
+                const cacheData = {
+                    timestamp: Date.now(),
+                    images: images
+                };
+                localStorage.setItem(key, JSON.stringify(cacheData));
+            } catch (e) {
+                console.warn('Failed to write CNN cache:', e);
+            }
+        }
 
         // ==================== LocalStorage Cache Functions ====================
 
@@ -1118,28 +1458,34 @@ def generate_html_page() -> str:
             const keys = [];
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
-                if (key && key.startsWith(CACHE_PREFIX)) {
+                if (key && (key.startsWith(CACHE_PREFIX) || key.startsWith(CNN_CACHE_PREFIX))) {
                     keys.push(key);
                 }
             }
             keys.forEach(key => localStorage.removeItem(key));
             updateCacheInfo();
-            alert(`Cleared ${keys.length} cached entries`);
+            alert(`Cleared ${keys.length} cached entries (hashes + CNN embeddings)`);
         }
 
         function updateCacheInfo() {
-            let count = 0;
+            let hashCount = 0;
+            let cnnCount = 0;
             let totalSize = 0;
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
                 if (key && key.startsWith(CACHE_PREFIX)) {
-                    count++;
+                    hashCount++;
+                    totalSize += localStorage.getItem(key).length;
+                } else if (key && key.startsWith(CNN_CACHE_PREFIX)) {
+                    cnnCount++;
                     totalSize += localStorage.getItem(key).length;
                 }
             }
             const sizeKB = (totalSize / 1024).toFixed(1);
+            const sizeMB = (totalSize / (1024 * 1024)).toFixed(2);
+            const sizeStr = totalSize > 1024 * 1024 ? `${sizeMB} MB` : `${sizeKB} KB`;
             document.getElementById('cacheInfo').textContent =
-                `Cache: ${count} species (${sizeKB} KB)`;
+                `Cache: ${hashCount} hash + ${cnnCount} CNN (${sizeStr})`;
         }
 
         function setCacheStatus(fromCache, speciesCount = 1) {
@@ -1250,6 +1596,105 @@ def generate_html_page() -> str:
             };
         }
 
+        // ==================== Client-side CNN Grouping ====================
+
+        function cosineSimilarity(vec1, vec2) {
+            if (!vec1 || !vec2 || vec1.length !== vec2.length) {
+                return 0;
+            }
+            let dot = 0, normA = 0, normB = 0;
+            for (let i = 0; i < vec1.length; i++) {
+                dot += vec1[i] * vec2[i];
+                normA += vec1[i] * vec1[i];
+                normB += vec2[i] * vec2[i];
+            }
+            if (normA === 0 || normB === 0) return 0;
+            return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+        }
+
+        function findCnnSimilarGroupsClient(images, threshold) {
+            const validImages = images.filter(img => img.embedding);
+            const n = validImages.length;
+            if (n < 2) return [];
+
+            // Union-Find
+            const parent = Array.from({length: n}, (_, i) => i);
+            const rank = new Array(n).fill(0);
+
+            function find(x) {
+                if (parent[x] !== x) parent[x] = find(parent[x]);
+                return parent[x];
+            }
+
+            function union(x, y) {
+                const px = find(x), py = find(y);
+                if (px === py) return;
+                if (rank[px] < rank[py]) {
+                    parent[px] = py;
+                } else if (rank[px] > rank[py]) {
+                    parent[py] = px;
+                } else {
+                    parent[py] = px;
+                    rank[px]++;
+                }
+            }
+
+            // Compare all pairs
+            for (let i = 0; i < n; i++) {
+                for (let j = i + 1; j < n; j++) {
+                    const sim = cosineSimilarity(validImages[i].embedding, validImages[j].embedding);
+                    if (sim >= threshold) {
+                        union(i, j);
+                    }
+                }
+            }
+
+            // Group by root
+            const groups = new Map();
+            for (let i = 0; i < n; i++) {
+                const root = find(i);
+                if (!groups.has(root)) groups.set(root, []);
+                groups.get(root).push(validImages[i]);
+            }
+
+            // Filter to groups with multiple images and format
+            const result = [];
+            let groupId = 1;
+            for (const [_, group] of groups) {
+                if (group.length > 1) {
+                    // Sort by size descending, then name
+                    group.sort((a, b) => b.size - a.size || a.filename.localeCompare(b.filename));
+                    result.push({
+                        group_id: groupId++,
+                        images: group.map(img => ({
+                            filename: img.filename,
+                            size: img.size,
+                            path: img.path
+                        })),
+                        count: group.length
+                    });
+                }
+            }
+            return result;
+        }
+
+        function processWithCachedCnnEmbeddings(speciesName, cachedData, threshold) {
+            const images = cachedData.images;
+            const similarGroups = findCnnSimilarGroupsClient(images, threshold);
+            const totalInGroups = similarGroups.reduce((sum, g) => sum + g.count, 0);
+
+            return {
+                species_name: speciesName,
+                total_images: images.length,
+                processed_images: images.filter(img => img.embedding).length,
+                similar_groups: similarGroups,
+                total_in_groups: totalInGroups,
+                similarity_threshold: threshold,
+                images: images,
+                from_cache: true
+            };
+        }
+
         function setMode(mode) {
             currentMode = mode;
             confirmedGroups.clear();
@@ -1339,6 +1784,12 @@ def generate_html_page() -> str:
                 currentData = { mode: 'single', species_results: [data] };
                 displaySingleSpeciesResults(data);
                 setCacheStatus(true);
+
+                // Also fetch CNN similarity if enabled
+                if (cnnEnabled) {
+                    await fetchCnnSimilarity(species);
+                }
+
                 document.getElementById('analyzeBtn').disabled = false;
                 return;
             }
@@ -1371,6 +1822,11 @@ def generate_html_page() -> str:
                 currentData = { mode: 'single', species_results: [data] };
                 displaySingleSpeciesResults(data);
                 setCacheStatus(false);
+
+                // Also fetch CNN similarity if enabled
+                if (cnnEnabled) {
+                    await fetchCnnSimilarity(species);
+                }
             } catch (error) {
                 document.getElementById('content').innerHTML = `
                     <div class="error"><strong>Error:</strong> ${error.message}</div>
@@ -1493,6 +1949,11 @@ def generate_html_page() -> str:
                 currentData = finalData;
                 displayAllSpeciesResults(finalData);
                 setCacheStatus(uncachedSpecies.length === 0, speciesList.length);
+
+                // CNN similarity for all species mode is not supported yet
+                if (cnnEnabled) {
+                    appendCnnNotice('CNN similarity in "All Species" mode requires analyzing each species individually.');
+                }
             } catch (error) {
                 document.getElementById('content').innerHTML = `
                     <div class="error"><strong>Error:</strong> ${error.message}</div>
@@ -1530,6 +1991,153 @@ def generate_html_page() -> str:
                 html += renderDuplicateGroup(data.species_name, group);
             });
             content.innerHTML = html;
+
+            // Add CNN section placeholder
+            if (cnnEnabled) {
+                const cnnSection = document.createElement('div');
+                cnnSection.id = 'cnnSimilaritySection';
+                cnnSection.innerHTML = '<div class="cnn-loading">🧠 CNN similarity analysis will appear here...</div>';
+                document.getElementById('content').appendChild(cnnSection);
+            }
+        }
+
+        async function fetchCnnSimilarity(speciesName) {
+            const threshold = parseFloat(document.getElementById('cnnThreshold').value);
+
+            // Check localStorage cache first
+            const cachedCnn = getCachedCnnEmbeddings(speciesName);
+            if (cachedCnn) {
+                const result = processWithCachedCnnEmbeddings(speciesName, cachedCnn, threshold);
+                displayCnnResults(result);
+                setCacheStatus(true);
+                return;
+            }
+
+            // Show loading in CNN section
+            let cnnSection = document.getElementById('cnnSimilaritySection');
+            if (!cnnSection) {
+                cnnSection = document.createElement('div');
+                cnnSection.id = 'cnnSimilaritySection';
+                document.getElementById('content').appendChild(cnnSection);
+            }
+            cnnSection.innerHTML = `
+                <div class="similar-section">
+                    <div class="cnn-loading">
+                        <div class="spinner"></div>
+                        <p>🧠 Computing CNN embeddings for similarity analysis...</p>
+                        <p style="font-size: 12px;">This may take a moment (using ResNet18)</p>
+                    </div>
+                </div>
+            `;
+
+            try {
+                const response = await fetch(
+                    `/api/similarity/${speciesName}?threshold=${threshold}`
+                );
+                const data = await response.json();
+
+                if (data.error) {
+                    cnnSection.innerHTML = `<div class="cnn-unavailable">⚠️ ${data.error}</div>`;
+                    return;
+                }
+
+                // Cache embeddings to localStorage
+                if (data.images && data.images.length > 0) {
+                    setCachedCnnEmbeddings(speciesName, data.images);
+                    updateCacheInfo();
+                }
+
+                displayCnnResults(data);
+                setCacheStatus(false);
+            } catch (error) {
+                cnnSection.innerHTML = `<div class="cnn-unavailable">⚠️ Error: ${error.message}</div>`;
+            }
+        }
+
+        function displayCnnResults(data) {
+            let cnnSection = document.getElementById('cnnSimilaritySection');
+            if (!cnnSection) {
+                cnnSection = document.createElement('div');
+                cnnSection.id = 'cnnSimilaritySection';
+                document.getElementById('content').appendChild(cnnSection);
+            }
+
+            if (!data.similar_groups || data.similar_groups.length === 0) {
+                cnnSection.innerHTML = `
+                    <div class="similar-section">
+                        <div class="similar-section-header">
+                            <h3>🧠 CNN Similar Images</h3>
+                            <span class="similar-badge">No similar images found at threshold ${data.similarity_threshold || 0.85}</span>
+                        </div>
+                        <p style="text-align: center; color: #888; padding: 20px;">
+                            No semantically similar images detected. Try lowering the similarity threshold.
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <div class="similar-section">
+                    <div class="similar-section-header">
+                        <h3>🧠 CNN Similar Images</h3>
+                        <div>
+                            <span class="similar-badge">${data.similar_groups.length} groups</span>
+                            <span class="similar-badge">${data.total_in_groups} images</span>
+                            <span class="similar-badge">Threshold: ${data.similarity_threshold || 0.85}</span>
+                        </div>
+                    </div>
+                    <p style="color: #ff9800; font-size: 13px; margin-bottom: 15px; padding: 0 10px;">
+                        ⚠️ These images are <strong>semantically similar</strong> (same subject, different shots) - not exact duplicates.
+                        Review carefully before considering removal.
+                    </p>
+            `;
+
+            data.similar_groups.forEach(group => {
+                const groupId = `cnn-${data.species_name}-${group.group_id}`;
+                html += `
+                    <div class="similar-group" id="group-${groupId}">
+                        <div class="group-header" onclick="toggleCnnGroupCollapse('${groupId}')">
+                            <div class="group-header-left">
+                                <span class="group-collapse-indicator">▼</span>
+                                <span class="group-title">Similar Group ${group.group_id}</span>
+                                <span class="group-count">${group.count} images</span>
+                            </div>
+                        </div>
+                        <div class="images-container">
+                            ${group.images.map(img => `
+                                <div class="image-card">
+                                    <div class="image-wrapper" onclick="showModal('${img.path}')">
+                                        <img src="${img.path}" alt="${img.filename}" loading="lazy">
+                                    </div>
+                                    <div class="image-info">
+                                        <div class="image-filename">${img.filename}</div>
+                                        <div class="image-size">${formatSize(img.size)}</div>
+                                        <span class="image-status">Similar</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            cnnSection.innerHTML = html;
+        }
+
+        function appendCnnNotice(message) {
+            let cnnSection = document.getElementById('cnnSimilaritySection');
+            if (!cnnSection) {
+                cnnSection = document.createElement('div');
+                cnnSection.id = 'cnnSimilaritySection';
+                document.getElementById('content').appendChild(cnnSection);
+            }
+            cnnSection.innerHTML = `
+                <div class="similar-section">
+                    <div class="cnn-unavailable">🧠 ${message}</div>
+                </div>
+            `;
         }
 
         function displayAllSpeciesResults(data) {
@@ -1595,13 +2203,14 @@ def generate_html_page() -> str:
             const isConfirmed = confirmedGroups.has(groupKey);
             return `
                 <div class="duplicate-group ${isConfirmed ? 'confirmed' : ''}" id="group-${groupKey.replace(':', '-')}">
-                    <div class="group-header">
+                    <div class="group-header" onclick="toggleGroupCollapse('${speciesName}', ${group.group_id})">
                         <div class="group-header-left">
+                            <span class="group-collapse-indicator">▼</span>
                             <span class="group-title">${isConfirmed ? '<span class="checkmark">✓</span>' : ''}Group ${group.group_id}</span>
                             <span class="group-count">${group.total_in_group} images</span>
                         </div>
                         <button class="confirm-btn ${isConfirmed ? 'confirmed' : ''}"
-                                onclick="confirmGroup('${speciesName}', ${group.group_id})">
+                                onclick="event.stopPropagation(); confirmGroup('${speciesName}', ${group.group_id})">
                             ${isConfirmed ? '✓ Confirmed' : 'Confirm'}
                         </button>
                     </div>
@@ -1683,6 +2292,33 @@ def generate_html_page() -> str:
         function expandAllSpecies() {
             document.querySelectorAll('.species-section').forEach(section => {
                 section.classList.remove('collapsed');
+            });
+        }
+
+        function toggleGroupCollapse(speciesName, groupId) {
+            const groupKey = `${speciesName}:${groupId}`;
+            const groupEl = document.getElementById(`group-${groupKey.replace(':', '-')}`);
+            if (groupEl) {
+                groupEl.classList.toggle('collapsed');
+            }
+        }
+
+        function toggleCnnGroupCollapse(groupId) {
+            const groupEl = document.getElementById(`group-${groupId}`);
+            if (groupEl) {
+                groupEl.classList.toggle('collapsed');
+            }
+        }
+
+        function collapseAllGroups() {
+            document.querySelectorAll('.duplicate-group, .similar-group').forEach(group => {
+                group.classList.add('collapsed');
+            });
+        }
+
+        function expandAllGroups() {
+            document.querySelectorAll('.duplicate-group, .similar-group').forEach(group => {
+                group.classList.remove('collapsed');
             });
         }
 
@@ -1951,6 +2587,31 @@ class DuplicateReviewHandler(http.server.BaseHTTPRequestHandler):
         if path == "/api/species":
             species = get_species_list()
             self.send_json(species)
+            return
+
+        # API: CNN availability check
+        if path == "/api/cnn/status":
+            self.send_json({"available": CNN_AVAILABLE, "model": DEFAULT_MODEL})
+            return
+
+        # API: Get CNN similarity for species
+        if path.startswith("/api/similarity/"):
+            species_name = urllib.parse.unquote(path[16:])
+            threshold = float(
+                query.get("threshold", [str(DEFAULT_SIMILARITY_THRESHOLD)])[0]
+            )
+            model = query.get("model", [DEFAULT_MODEL])[0]
+
+            if not CNN_AVAILABLE:
+                self.send_json(
+                    {
+                        "error": "CNN not available. Install: pip install torch torchvision"
+                    }
+                )
+                return
+
+            result = get_species_cnn_similarity(species_name, threshold, model)
+            self.send_json(result)
             return
 
         if path == "/api/duplicates/all":
