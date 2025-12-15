@@ -6,6 +6,13 @@ __pycache__/
 *.pyd
 .Python
 
+# Package build artifacts
+src/plantnet.egg-info/
+build/
+dist/
+*.egg-info/
+.eggs/
+
 # macOS
 .DS_Store
 
