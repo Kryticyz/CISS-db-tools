@@ -100,8 +100,38 @@ def load_model(model_name: str = DEFAULT_MODEL):
             "Install with: pip install torch torchvision"
         )
 
-    # Select device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Select device (prioritize Apple Silicon MPS, then CUDA, then CPU)
+    # Note: MPS can be unstable on Python 3.13, use CPU as fallback if issues occur
+    import os
+    import sys
+
+    # Check if CPU mode is forced via environment variable
+    force_cpu = os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK") == "1"
+
+    use_mps = torch.backends.mps.is_available() and not force_cpu
+
+    # Check for MPS issues (Python 3.13 compatibility)
+    if use_mps and sys.version_info >= (3, 13):
+        print("Warning: Python 3.13 detected. MPS may be unstable.")
+        print("If you experience crashes, run with --cpu flag")
+
+    if use_mps:
+        try:
+            device = torch.device("mps")
+            # Test MPS with a small tensor to catch issues early
+            test_tensor = torch.zeros(1, device=device)
+            del test_tensor  # Clean up
+            print("Using Apple Silicon MPS backend")
+        except Exception as e:
+            print(f"MPS initialization failed: {e}")
+            print("Falling back to CPU")
+            device = torch.device("cpu")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+        print("Using CUDA GPU")
+    else:
+        device = torch.device("cpu")
+        print("Using CPU")
 
     # Load pre-trained model
     if model_name == "resnet18":
@@ -207,6 +237,107 @@ def compute_cnn_embeddings(
             embeddings[img_path] = embedding
         else:
             errors.append((img_path.name, "Failed to extract embedding"))
+
+    if verbose:
+        print(f"  Extracted embeddings for {len(embeddings)}/{total} images")
+
+    return embeddings, errors
+
+
+def compute_cnn_embeddings_batch(
+    image_paths: List[Path],
+    model_name: str = DEFAULT_MODEL,
+    batch_size: int = 32,
+    verbose: bool = True,
+) -> Tuple[Dict[Path, List[float]], List[Tuple[str, str]]]:
+    """
+    Compute CNN embeddings in batches for improved efficiency.
+
+    This function is optimized for GPU/MPS processing by batching multiple
+    images together, which significantly improves throughput.
+
+    Args:
+        image_paths: List of image file paths
+        model_name: Name of the model to use
+        batch_size: Number of images to process at once
+        verbose: Print progress information
+
+    Returns:
+        Tuple of (embedding_map, errors)
+        - embedding_map: Dict mapping paths to embedding vectors
+        - errors: List of (filename, error_message) tuples
+    """
+    try:
+        import torch
+        from PIL import Image
+    except ImportError:
+        # Fallback to non-batch version
+        return compute_cnn_embeddings(image_paths, model_name, verbose)
+
+    if verbose:
+        print(f"Loading {model_name} model for batch processing...")
+
+    model, transform, device = load_model(model_name)
+
+    embeddings: Dict[Path, List[float]] = {}
+    errors: List[Tuple[str, str]] = []
+
+    # Process in batches
+    total = len(image_paths)
+    num_batches = (total + batch_size - 1) // batch_size
+
+    for batch_idx in range(num_batches):
+        start_idx = batch_idx * batch_size
+        end_idx = min(start_idx + batch_size, total)
+        batch_paths = image_paths[start_idx:end_idx]
+
+        if verbose and batch_idx % 10 == 0:
+            print(f"  Batch {batch_idx + 1}/{num_batches} ({end_idx}/{total} images)")
+
+        # Load and preprocess batch
+        batch_tensors = []
+        valid_paths = []
+
+        for img_path in batch_paths:
+            try:
+                img = Image.open(img_path)
+                if img.mode != "RGB":
+                    img = img.convert("RGB")
+                img_tensor = transform(img)
+                batch_tensors.append(img_tensor)
+                valid_paths.append(img_path)
+            except Exception as e:
+                errors.append((img_path.name, str(e)))
+
+        if not batch_tensors:
+            continue
+
+        # Stack into batch and move to device
+        try:
+            batch_tensor = torch.stack(batch_tensors).to(device)
+
+            # Extract features
+            with torch.no_grad():
+                features = model(batch_tensor)
+                # Flatten and normalize each embedding
+                features = features.squeeze()
+                if len(features.shape) == 1:  # Single image batch
+                    features = features.unsqueeze(0)
+                features = features / features.norm(dim=1, keepdim=True)
+
+            # Convert to lists and store
+            features_cpu = features.cpu()
+            for i, img_path in enumerate(valid_paths):
+                embeddings[img_path] = features_cpu[i].tolist()
+
+        except Exception as e:
+            # If batch processing fails, process individually
+            for img_path in valid_paths:
+                embedding = extract_embedding(img_path, model, transform, device)
+                if embedding is not None:
+                    embeddings[img_path] = embedding
+                else:
+                    errors.append((img_path.name, f"Batch processing failed: {str(e)}"))
 
     if verbose:
         print(f"  Extracted embeddings for {len(embeddings)}/{total} images")

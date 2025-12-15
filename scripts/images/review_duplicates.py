@@ -87,6 +87,135 @@ HASH_CACHE: Dict[str, Dict[Path, str]] = {}
 # Cache for CNN embeddings
 CNN_CACHE: Dict[str, Dict[Path, List[float]]] = {}
 
+# FAISS embedding store
+FAISS_STORE: Optional[Any] = None
+EMBEDDINGS_DIR = Path("data/databases/embeddings")
+
+
+class FAISSEmbeddingStore:
+    """FAISS-based embedding store for fast similarity search."""
+
+    def __init__(self, embeddings_dir: Path):
+        try:
+            import pickle
+
+            import faiss
+        except ImportError:
+            raise ImportError(
+                "FAISS not available. Install with: pip install faiss-cpu"
+            )
+
+        self.embeddings_dir = embeddings_dir
+        self.index = faiss.read_index(str(embeddings_dir / "embeddings.index"))
+
+        with open(embeddings_dir / "metadata.pkl", "rb") as f:
+            self.metadata = pickle.load(f)
+
+        print(f"Loaded FAISS index with {self.index.ntotal} vectors")
+
+    def search_species(self, species_name: str, threshold: float = 0.85):
+        """Find similar images within a species using cached embeddings."""
+        try:
+            import pickle
+
+            import faiss
+            import numpy as np
+        except ImportError:
+            return []
+
+        # Get all images for this species
+        species_items = [m for m in self.metadata if m["species"] == species_name]
+        if len(species_items) < 2:
+            return []
+
+        # Get their indices in the FAISS index
+        species_indices = [
+            i for i, m in enumerate(self.metadata) if m["species"] == species_name
+        ]
+
+        # Extract their embeddings
+        # (We need full metadata for this - load it)
+        with open(self.embeddings_dir / "metadata_full.pkl", "rb") as f:
+            full_metadata = pickle.load(f)
+
+        species_embeddings = [full_metadata[i]["embedding"] for i in species_indices]
+        embeddings_array = np.array(species_embeddings, dtype="float32")
+        faiss.normalize_L2(embeddings_array)
+
+        # Find similar pairs using threshold
+        n = len(species_embeddings)
+
+        # Union-Find for grouping
+        parent = list(range(n))
+
+        def find(x):
+            if parent[x] != x:
+                parent[x] = find(parent[x])
+            return parent[x]
+
+        def union(x, y):
+            px, py = find(x), find(y)
+            if px != py:
+                parent[py] = px
+
+        # Compare all pairs
+        for i in range(n):
+            for j in range(i + 1, n):
+                sim = np.dot(embeddings_array[i], embeddings_array[j])
+                if sim >= threshold:
+                    union(i, j)
+
+        # Group by root
+        groups_dict = {}
+        for i in range(n):
+            root = find(i)
+            if root not in groups_dict:
+                groups_dict[root] = []
+            groups_dict[root].append(species_items[i])
+
+        # Format as groups (only groups with >1 image)
+        result_groups = []
+        group_id = 1
+        for group_items in groups_dict.values():
+            if len(group_items) > 1:
+                # Sort by size
+                group_items.sort(key=lambda x: -x["size"])
+                result_groups.append(
+                    {
+                        "group_id": group_id,
+                        "images": [
+                            {
+                                "filename": item["filename"],
+                                "size": item["size"],
+                                "path": f"/image/{species_name}/{item['filename']}",
+                            }
+                            for item in group_items
+                        ],
+                        "count": len(group_items),
+                    }
+                )
+                group_id += 1
+
+        return result_groups
+
+
+def init_faiss_store():
+    """Initialize FAISS store if embeddings exist."""
+    global FAISS_STORE
+
+    if EMBEDDINGS_DIR.exists() and (EMBEDDINGS_DIR / "embeddings.index").exists():
+        try:
+            FAISS_STORE = FAISSEmbeddingStore(EMBEDDINGS_DIR)
+            return True
+        except Exception as e:
+            print(f"Warning: Could not load FAISS store: {e}")
+            return False
+    return False
+
+
+# Initialize on module load
+FAISS_AVAILABLE = init_faiss_store()
+
 
 def get_species_list() -> List[str]:
     """Get list of species directories."""
@@ -305,8 +434,35 @@ def get_species_cnn_similarity(
     """
     Get CNN-based similar image groups for a species.
 
+    Now uses pre-computed embeddings from FAISS if available,
+    otherwise falls back to on-demand computation.
+
     Returns dict with similar group information.
     """
+    # Try FAISS first (instant)
+    if FAISS_STORE is not None:
+        try:
+            similar_groups = FAISS_STORE.search_species(
+                species_name, similarity_threshold
+            )
+
+            total_in_groups = sum(g["count"] for g in similar_groups)
+
+            return {
+                "species_name": species_name,
+                "total_images": total_in_groups,
+                "processed_images": total_in_groups,
+                "similar_groups": similar_groups,
+                "total_in_groups": total_in_groups,
+                "similarity_threshold": similarity_threshold,
+                "model_name": "pre-computed",
+                "cnn_available": True,
+                "from_faiss": True,
+            }
+        except Exception as e:
+            print(f"FAISS search failed, falling back to on-demand: {e}")
+
+    # Fallback to original on-demand computation
     if not CNN_AVAILABLE:
         return {"error": "CNN similarity not available. Install torch and torchvision."}
 
@@ -1229,6 +1385,7 @@ def generate_html_page() -> str:
                 <button class="secondary" onclick="clearHashCache()">Clear Cache</button>
                 <button class="toggle-cnn" id="cnnToggle" onclick="toggleCNN()">🧠 Enable CNN Similarity</button>
                 <span id="cacheInfo">Cache: checking...</span>
+                <span id="faissStatus" style="margin-left: 15px; font-size: 12px;"></span>
             </div>
             <div id="cnnControls" class="cnn-controls" style="display: none; margin-top: 10px;">
                 <label>CNN Similarity Threshold:</label>
@@ -1344,11 +1501,31 @@ def generate_html_page() -> str:
         const CNN_CACHE_PREFIX = 'plantnet_cnn_';
         const CACHE_VERSION = 'v1';
 
+        // Check FAISS vector database availability
+        async function checkFaissStatus() {
+            try {
+                const response = await fetch('/api/faiss/status');
+                const data = await response.json();
+
+                const statusEl = document.getElementById('faissStatus');
+                if (data.available) {
+                    statusEl.innerHTML = '⚡ <span style="color: #4ecca3;">Vector DB Ready</span>';
+                    statusEl.title = `${data.count} pre-computed embeddings`;
+                } else {
+                    statusEl.innerHTML = '⚠️ <span style="color: #ff9800;">On-demand mode</span>';
+                    statusEl.title = 'Run batch_generate_embeddings.py to enable vector search';
+                }
+            } catch (e) {
+                console.warn('Could not check FAISS status:', e);
+            }
+        }
+
         // Load species list on page load
         document.addEventListener('DOMContentLoaded', () => {
             loadSpecies();
             updateCacheInfo();
             updateCnnThresholdDisplay();
+            checkFaissStatus();
         });
 
         // ==================== CNN Toggle Functions ====================
@@ -2592,6 +2769,17 @@ class DuplicateReviewHandler(http.server.BaseHTTPRequestHandler):
         # API: CNN availability check
         if path == "/api/cnn/status":
             self.send_json({"available": CNN_AVAILABLE, "model": DEFAULT_MODEL})
+            return
+
+        # API: FAISS status check
+        if path == "/api/faiss/status":
+            self.send_json(
+                {
+                    "available": FAISS_AVAILABLE,
+                    "count": FAISS_STORE.index.ntotal if FAISS_STORE else 0,
+                    "location": str(EMBEDDINGS_DIR) if FAISS_AVAILABLE else None,
+                }
+            )
             return
 
         # API: Get CNN similarity for species
