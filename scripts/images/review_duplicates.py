@@ -995,6 +995,7 @@ def generate_html_page() -> str:
         }
 
         .image-wrapper {
+            position: relative;
             width: 100%;
             height: 200px;
             overflow: hidden;
@@ -1003,12 +1004,51 @@ def generate_html_page() -> str:
             justify-content: center;
             background: #000;
             cursor: pointer;
+            border: 3px solid #333;
+            border-radius: 8px;
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
 
         .image-wrapper img {
             max-width: 100%;
             max-height: 100%;
             object-fit: contain;
+        }
+
+        /* Color-coding for detection types */
+        .image-wrapper[data-type="duplicate"] {
+            border-color: #dc3545;
+        }
+
+        .image-wrapper[data-type="cnn_similarity"] {
+            border-color: #007bff;
+        }
+
+        .image-wrapper[data-type="outlier"] {
+            border-color: #ffc107;
+        }
+
+        /* Selected for deletion state */
+        .image-wrapper.selected-for-deletion {
+            box-shadow: 0 0 0 4px rgba(220, 53, 69, 0.5);
+            border-color: #dc3545 !important;
+        }
+
+        .image-wrapper.selected-for-deletion::after {
+            content: '✓';
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #dc3545;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 18px;
         }
 
         .image-info {
@@ -1069,6 +1109,73 @@ def generate_html_page() -> str:
             border-radius: 10px;
             margin: 20px 0;
             font-weight: bold;
+        }
+
+        .warning-banner {
+            background: #ff9800;
+            color: #000;
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: bold;
+            display: none;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .warning-banner.active {
+            display: flex;
+        }
+
+        .warning-icon {
+            font-size: 24px;
+        }
+
+        .view-btn {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 123, 255, 0.9);
+            color: white;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            z-index: 10;
+            transition: background 0.2s;
+        }
+
+        .view-btn:hover {
+            background: rgba(0, 123, 255, 1);
+        }
+
+        .type-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            text-transform: uppercase;
+            z-index: 10;
+        }
+
+        .type-badge.duplicate {
+            background: #dc3545;
+            color: white;
+        }
+
+        .type-badge.cnn_similarity {
+            background: #007bff;
+            color: white;
+        }
+
+        .type-badge.outlier {
+            background: #ffc107;
+            color: black;
         }
 
         /* Modal styles */
@@ -1343,6 +1450,16 @@ def generate_html_page() -> str:
 
             <div class="controls">
                 <div class="control-group">
+                    <label>Detection Type</label>
+                    <div class="mode-buttons">
+                        <button id="cnnModeBtn" class="secondary active" onclick="setDetectionMode('cnn')">CNN Similarity</button>
+                        <button id="duplicateModeBtn" class="secondary" onclick="setDetectionMode('duplicate')">Direct Duplicates</button>
+                        <button id="outlierModeBtn" class="secondary" onclick="setDetectionMode('outlier')">Outliers</button>
+                        <button id="combinedModeBtn" class="secondary" onclick="setDetectionMode('combined')">Combined</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
                     <label>View Mode</label>
                     <div class="mode-buttons">
                         <button id="singleModeBtn" class="secondary active" onclick="setMode('single')">Single Species</button>
@@ -1357,14 +1474,35 @@ def generate_html_page() -> str:
                     </select>
                 </div>
 
-                <div class="control-group">
+                <div class="control-group" id="hashSizeGroup">
                     <label>Hash Size</label>
                     <input type="number" id="hashSize" value="16" min="4" max="32" step="2">
                 </div>
 
-                <div class="control-group">
+                <div class="control-group" id="hammingThresholdGroup">
                     <label>Hamming Threshold</label>
                     <input type="number" id="hammingThreshold" value="5" min="0" max="20">
+                    <button class="secondary" style="padding: 5px 10px; font-size: 12px; margin-top: 5px;" onclick="updateHammingThreshold()">Update</button>
+                </div>
+
+                <div class="control-group" id="cnnThresholdGroup">
+                    <label>CNN Threshold</label>
+                    <input type="number" id="cnnThresholdInput" value="0.85" min="0.5" max="0.99" step="0.01">
+                    <button class="secondary" style="padding: 5px 10px; font-size: 12px; margin-top: 5px;" onclick="updateCnnThreshold()">Update</button>
+                </div>
+
+                <div class="control-group" id="outlierSettingsGroup" style="display: none;">
+                    <label>Outlier Thresholds</label>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <div>
+                            <label style="font-size: 12px; color: #888;">Isolation Threshold:</label>
+                            <input type="number" id="isolationThreshold" value="0.75" min="0.5" max="0.95" step="0.05" style="width: 70px;">
+                        </div>
+                        <div>
+                            <label style="font-size: 12px; color: #888;">Centroid Multiplier:</label>
+                            <input type="number" id="centroidMultiplier" value="2.0" min="1.0" max="4.0" step="0.5" style="width: 70px;">
+                        </div>
+                    </div>
                 </div>
 
                 <div class="control-group">
@@ -1373,13 +1511,22 @@ def generate_html_page() -> str:
                 </div>
             </div>
 
-            <div class="threshold-info">
+            <div class="threshold-info" id="thresholdInfo">
                 <strong>Hamming Threshold:</strong> Lower values = stricter matching (fewer false positives).
                 Higher values = more permissive (may catch more duplicates but also false positives).
                 <br>
                 <strong>Hash Size:</strong> Higher values = more precise hashing but slower computation.
                 <br>
                 <strong>Cache:</strong> Image hashes are cached in your browser. Changing threshold uses cached data instantly.
+            </div>
+            <div class="threshold-info" id="outlierInfo" style="display: none;">
+                <strong>Isolation Threshold:</strong> Images with max similarity to any other image below this value
+                are flagged as "isolated". <em>Lower = more sensitive (more outliers). Higher = less sensitive.</em>
+                <br>
+                <strong>Centroid Multiplier:</strong> Images beyond (mean + X &times; std) distance from the species
+                centroid are flagged as "distant". <em>Lower = more sensitive (more outliers). Higher = less sensitive.</em>
+                <br>
+                <strong>Tip:</strong> If seeing too many outliers, increase both values. Start with Centroid Multiplier = 2.5 or 3.0.
             </div>
             <div class="cache-controls">
                 <button class="secondary" onclick="clearHashCache()">Clear Cache</button>
@@ -1395,6 +1542,11 @@ def generate_html_page() -> str:
                 <span style="font-size: 11px; color: #888;">(Higher = stricter matching)</span>
             </div>
         </header>
+
+        <div class="warning-banner" id="warningBanner">
+            <span class="warning-icon">⚠️</span>
+            <div id="warningMessage"></div>
+        </div>
 
         <div class="action-bar" id="actionBar" style="display: none;">
             <div class="action-bar-left">
@@ -1493,8 +1645,10 @@ def generate_html_page() -> str:
 
     <script>
         let currentMode = 'single';
+        let currentDetectionMode = 'cnn'; // 'cnn', 'duplicate', 'outlier', 'combined'
         let currentData = null;
         let confirmedGroups = new Set(); // Format: "speciesName:groupId"
+        let selectedImages = new Set(); // Format: "species/filename"
         let cnnEnabled = false;
         let cnnData = null;
         const CACHE_PREFIX = 'plantnet_hashes_';
@@ -1526,7 +1680,77 @@ def generate_html_page() -> str:
             updateCacheInfo();
             updateCnnThresholdDisplay();
             checkFaissStatus();
+            updateControlVisibility();
         });
+
+        // ==================== Detection Mode Functions ====================
+
+        function setDetectionMode(mode) {
+            currentDetectionMode = mode;
+
+            // Update button states
+            document.getElementById('cnnModeBtn').classList.toggle('active', mode === 'cnn');
+            document.getElementById('duplicateModeBtn').classList.toggle('active', mode === 'duplicate');
+            document.getElementById('outlierModeBtn').classList.toggle('active', mode === 'outlier');
+            document.getElementById('combinedModeBtn').classList.toggle('active', mode === 'combined');
+
+            // Update control visibility
+            updateControlVisibility();
+
+            // Clear current results
+            document.getElementById('content').innerHTML = '<div class="loading"><p>Select settings and click Analyze to view ' + mode + ' detection results.</p></div>';
+        }
+
+        function updateControlVisibility() {
+            const mode = currentDetectionMode;
+            const hashSizeGroup = document.getElementById('hashSizeGroup');
+            const hammingGroup = document.getElementById('hammingThresholdGroup');
+            const cnnGroup = document.getElementById('cnnThresholdGroup');
+            const outlierGroup = document.getElementById('outlierSettingsGroup');
+            const thresholdInfo = document.getElementById('thresholdInfo');
+            const outlierInfo = document.getElementById('outlierInfo');
+
+            // Show/hide controls based on detection mode
+            if (mode === 'duplicate') {
+                hashSizeGroup.style.display = 'flex';
+                hammingGroup.style.display = 'flex';
+                cnnGroup.style.display = 'none';
+                outlierGroup.style.display = 'none';
+                thresholdInfo.style.display = 'block';
+                outlierInfo.style.display = 'none';
+            } else if (mode === 'cnn') {
+                hashSizeGroup.style.display = 'none';
+                hammingGroup.style.display = 'none';
+                cnnGroup.style.display = 'flex';
+                outlierGroup.style.display = 'none';
+                thresholdInfo.style.display = 'block';
+                outlierInfo.style.display = 'none';
+            } else if (mode === 'outlier') {
+                hashSizeGroup.style.display = 'none';
+                hammingGroup.style.display = 'none';
+                cnnGroup.style.display = 'none';
+                outlierGroup.style.display = 'flex';
+                thresholdInfo.style.display = 'none';
+                outlierInfo.style.display = 'block';
+            } else if (mode === 'combined') {
+                hashSizeGroup.style.display = 'flex';
+                hammingGroup.style.display = 'flex';
+                cnnGroup.style.display = 'flex';
+                outlierGroup.style.display = 'flex';
+                thresholdInfo.style.display = 'block';
+                outlierInfo.style.display = 'block';
+            }
+        }
+
+        function updateCnnThreshold() {
+            if (!currentData) return;
+            analyzeDuplicates();
+        }
+
+        function updateHammingThreshold() {
+            if (!currentData) return;
+            analyzeDuplicates();
+        }
 
         // ==================== CNN Toggle Functions ====================
 
@@ -1921,6 +2145,7 @@ def generate_html_page() -> str:
 
         async function analyzeDuplicates() {
             confirmedGroups.clear();
+            selectedImages.clear();
             updateConfirmedCount();
 
             if (currentMode === 'single') {
@@ -1937,73 +2162,78 @@ def generate_html_page() -> str:
                 return;
             }
 
-            const hashSize = parseInt(document.getElementById('hashSize').value);
-            const threshold = parseInt(document.getElementById('hammingThreshold').value);
-
             document.getElementById('stats').style.display = 'none';
             document.getElementById('actionBar').style.display = 'none';
             document.getElementById('analyzeBtn').disabled = true;
 
-            // Check cache first
-            const cachedData = getCachedHashes(species, hashSize);
-            if (cachedData) {
-                document.getElementById('content').innerHTML = `
-                    <div class="loading">
-                        <div class="spinner"></div>
-                        <p>Processing cached data for ${species.replace(/_/g, ' ')}...</p>
-                    </div>
-                `;
-
-                // Small delay to show loading state
-                await new Promise(resolve => setTimeout(resolve, 50));
-
-                const data = processWithCachedHashes(species, cachedData, hashSize, threshold);
-                currentData = { mode: 'single', species_results: [data] };
-                displaySingleSpeciesResults(data);
-                setCacheStatus(true);
-
-                // Also fetch CNN similarity if enabled
-                if (cnnEnabled) {
-                    await fetchCnnSimilarity(species);
-                }
-
-                document.getElementById('analyzeBtn').disabled = false;
-                return;
-            }
-
-            // Fetch from server
-            document.getElementById('content').innerHTML = `
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <p>Analyzing images for ${species.replace(/_/g, ' ')}...</p>
-                    <p style="font-size: 12px; margin-top: 10px;">Computing perceptual hashes...</p>
-                </div>
-            `;
+            const mode = currentDetectionMode;
 
             try {
-                const response = await fetch(
-                    `/api/duplicates/${species}?hash_size=${hashSize}&threshold=${threshold}`
-                );
-                const data = await response.json();
+                let data;
+                let apiUrl;
+                const hashSize = parseInt(document.getElementById('hashSize').value);
+                const hammingThreshold = parseInt(document.getElementById('hammingThreshold').value);
+                const cnnThreshold = parseFloat(document.getElementById('cnnThresholdInput').value);
+                const isolationThreshold = parseFloat(document.getElementById('isolationThreshold').value) || 0.75;
+                const centroidMultiplier = parseFloat(document.getElementById('centroidMultiplier').value) || 2.0;
+
+                // Determine API endpoint based on detection mode
+                if (mode === 'cnn') {
+                    apiUrl = `/api/similarity/${species}?threshold=${cnnThreshold}`;
+                    document.getElementById('content').innerHTML = `
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            <p>Computing CNN similarity for ${species.replace(/_/g, ' ')}...</p>
+                        </div>
+                    `;
+                } else if (mode === 'duplicate') {
+                    apiUrl = `/api/duplicates/${species}?hash_size=${hashSize}&threshold=${hammingThreshold}`;
+                    document.getElementById('content').innerHTML = `
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            <p>Finding duplicates for ${species.replace(/_/g, ' ')}...</p>
+                        </div>
+                    `;
+                } else if (mode === 'outlier') {
+                    apiUrl = `/api/outliers/${species}?threshold=${isolationThreshold}&centroid_multiplier=${centroidMultiplier}`;
+                    document.getElementById('content').innerHTML = `
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            <p>Detecting outliers for ${species.replace(/_/g, ' ')}...</p>
+                        </div>
+                    `;
+                } else if (mode === 'combined') {
+                    apiUrl = `/api/combined/${species}?similarity_threshold=${cnnThreshold}&hamming_threshold=${hammingThreshold}&hash_size=${hashSize}&outlier_isolation_threshold=${isolationThreshold}&outlier_centroid_multiplier=${centroidMultiplier}`;
+                    document.getElementById('content').innerHTML = `
+                        <div class="loading">
+                            <div class="spinner"></div>
+                            <p>Running combined analysis for ${species.replace(/_/g, ' ')}...</p>
+                        </div>
+                    `;
+                }
+
+                const response = await fetch(apiUrl);
+                data = await response.json();
 
                 if (data.error) {
                     throw new Error(data.error);
                 }
 
-                // Cache the hashes for future use
-                if (data.images && data.images.length > 0) {
-                    setCachedHashes(species, hashSize, data.images);
-                    updateCacheInfo();
+                currentData = data;
+
+                // Display results based on mode
+                if (mode === 'cnn') {
+                    displayCnnResults(data);
+                } else if (mode === 'duplicate') {
+                    displayDuplicateResults(data);
+                } else if (mode === 'outlier') {
+                    displayOutlierResults(data);
+                } else if (mode === 'combined') {
+                    displayCombinedResults(data);
                 }
 
-                currentData = { mode: 'single', species_results: [data] };
-                displaySingleSpeciesResults(data);
-                setCacheStatus(false);
-
-                // Also fetch CNN similarity if enabled
-                if (cnnEnabled) {
-                    await fetchCnnSimilarity(species);
-                }
+                document.getElementById('stats').style.display = 'flex';
+                document.getElementById('actionBar').style.display = 'flex';
             } catch (error) {
                 document.getElementById('content').innerHTML = `
                     <div class="error"><strong>Error:</strong> ${error.message}</div>
@@ -2282,18 +2512,7 @@ def generate_html_page() -> str:
                             </div>
                         </div>
                         <div class="images-container">
-                            ${group.images.map(img => `
-                                <div class="image-card">
-                                    <div class="image-wrapper" onclick="showModal('${img.path}')">
-                                        <img src="${img.path}" alt="${img.filename}" loading="lazy">
-                                    </div>
-                                    <div class="image-info">
-                                        <div class="image-filename">${img.filename}</div>
-                                        <div class="image-size">${formatSize(img.size)}</div>
-                                        <span class="image-status">Similar</span>
-                                    </div>
-                                </div>
-                            `).join('')}
+                            ${group.images.map(img => renderImageCard(img, 'cnn_similarity', data.species_name)).join('')}
                         </div>
                     </div>
                 `;
@@ -2301,6 +2520,203 @@ def generate_html_page() -> str:
 
             html += '</div>';
             cnnSection.innerHTML = html;
+        }
+
+        // Helper function to render image card with new behavior
+        function renderImageCard(img, type, speciesName) {
+            const imageKey = `${speciesName}/${img.filename}`;
+            const selected = selectedImages.has(imageKey);
+            return `
+                <div class="image-card">
+                    <div class="image-wrapper ${selected ? 'selected-for-deletion' : ''}"
+                         data-type="${type}"
+                         data-image-key="${imageKey}"
+                         onclick="toggleImageSelection('${imageKey}')">
+                        <span class="type-badge ${type}">${type.replace('_', ' ')}</span>
+                        <img src="${img.path}" alt="${img.filename}" loading="lazy">
+                        <button class="view-btn" onclick="event.stopPropagation(); showModal('${img.path}')">View</button>
+                    </div>
+                    <div class="image-info">
+                        <div class="image-filename">${img.filename}</div>
+                        <div class="image-size">${formatSize(img.size)}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Toggle image selection for deletion
+        function toggleImageSelection(imageKey) {
+            if (selectedImages.has(imageKey)) {
+                selectedImages.delete(imageKey);
+            } else {
+                selectedImages.add(imageKey);
+            }
+
+            // Update UI
+            const wrapper = document.querySelector(`[data-image-key="${imageKey}"]`);
+            if (wrapper) {
+                wrapper.classList.toggle('selected-for-deletion');
+            }
+
+            updateDeleteButtonState();
+            checkGroupDeletionWarning();
+        }
+
+        function updateDeleteButtonState() {
+            const deleteBtn = document.getElementById('deleteBtn');
+            if (selectedImages.size > 0) {
+                deleteBtn.disabled = false;
+                deleteBtn.textContent = `🗑️ Delete ${selectedImages.size} Selected Image${selectedImages.size > 1 ? 's' : ''}`;
+            } else {
+                deleteBtn.disabled = true;
+                deleteBtn.textContent = '🗑️ Delete Selected Images';
+            }
+        }
+
+        function checkGroupDeletionWarning() {
+            // Check if any group has all images selected
+            const warningBanner = document.getElementById('warningBanner');
+            const warningMessage = document.getElementById('warningMessage');
+
+            let hasFullGroupDeletion = false;
+            let warningText = '';
+
+            if (currentData && currentData.items) {
+                // Combined view
+                for (const item of currentData.items) {
+                    const allSelected = item.images.every(img =>
+                        selectedImages.has(`${currentData.species_name}/${img.filename}`)
+                    );
+                    if (allSelected && item.images.length > 1) {
+                        hasFullGroupDeletion = true;
+                        warningText = `Warning: All images in one or more groups are selected for deletion. Consider keeping at least one image from each group.`;
+                        break;
+                    }
+                }
+            }
+
+            if (hasFullGroupDeletion) {
+                warningBanner.classList.add('active');
+                warningMessage.textContent = warningText;
+            } else {
+                warningBanner.classList.remove('active');
+            }
+        }
+
+        function displayDuplicateResults(data) {
+            const content = document.getElementById('content');
+            if (!data.duplicate_groups || data.duplicate_groups.length === 0) {
+                content.innerHTML = `
+                    <div class="no-duplicates">
+                        ✓ No duplicates found for ${data.species_name.replace(/_/g, ' ')}
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '<div class="results-container">';
+            data.duplicate_groups.forEach(group => {
+                html += `
+                    <div class="duplicate-group">
+                        <div class="group-header">
+                            <div class="group-header-left">
+                                <span class="group-title">Duplicate Group ${group.group_id}</span>
+                                <span class="group-count">${group.total_in_group} images</span>
+                            </div>
+                        </div>
+                        <div class="images-container">
+                            ${renderImageCard(group.keep, 'duplicate', data.species_name)}
+                            ${group.duplicates.map(dup => renderImageCard(dup, 'duplicate', data.species_name)).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            content.innerHTML = html;
+        }
+
+        function displayOutlierResults(data) {
+            const content = document.getElementById('content');
+            if (!data.outliers || data.outliers.length === 0) {
+                content.innerHTML = `
+                    <div class="no-duplicates">
+                        ✓ No outliers found for ${data.species_name.replace(/_/g, ' ')}
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <div class="results-container">
+                    <div class="info-banner" style="background: #ffc107; color: #000; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+                        <strong>Outlier Detection:</strong> Found ${data.outliers.length} images that are significantly different from other images in this species.
+                        These may be misclassified images or unusual specimens.
+                    </div>
+            `;
+
+            data.outliers.forEach((outlier, idx) => {
+                html += `
+                    <div class="duplicate-group">
+                        <div class="group-header">
+                            <div class="group-header-left">
+                                <span class="group-title">Outlier ${idx + 1}</span>
+                                <span class="group-count">${outlier.outlier_types.join(', ')}</span>
+                            </div>
+                        </div>
+                        <div class="images-container">
+                            ${renderImageCard(outlier, 'outlier', data.species_name)}
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            content.innerHTML = html;
+        }
+
+        function displayCombinedResults(data) {
+            const content = document.getElementById('content');
+            if (!data.items || data.items.length === 0) {
+                content.innerHTML = `
+                    <div class="no-duplicates">
+                        ✓ No issues found for ${data.species_name.replace(/_/g, ' ')}
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <div class="results-container">
+                    <div class="info-banner" style="background: #007bff; color: #fff; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+                        <strong>Combined View:</strong> Showing ${data.total_items} groups across all detection types.
+                        Colors indicate type: <span style="color: #dc3545;">■</span> Duplicates,
+                        <span style="color: #007bff;">■</span> CNN Similar,
+                        <span style="color: #ffc107;">■</span> Outliers
+                    </div>
+            `;
+
+            data.items.forEach((item, idx) => {
+                const typeLabel = item.type === 'cnn_similarity' ? 'CNN Similar' :
+                                 item.type === 'duplicate' ? 'Duplicate' : 'Outlier';
+                html += `
+                    <div class="duplicate-group">
+                        <div class="group-header">
+                            <div class="group-header-left">
+                                <span class="group-title">${typeLabel} Group ${item.group_id}</span>
+                                <span class="group-count">${item.count} image${item.count > 1 ? 's' : ''}</span>
+                            </div>
+                        </div>
+                        <div class="images-container">
+                            ${item.images.map(img => renderImageCard(img, item.type, data.species_name)).join('')}
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            content.innerHTML = html;
+            updateDeleteButtonState();
+            checkGroupDeletionWarning();
         }
 
         function appendCnnNotice(message) {
@@ -2592,18 +3008,8 @@ def generate_html_page() -> str:
         }
 
         function getConfirmedFilePaths() {
-            if (!currentData) return [];
-            const paths = [];
-            currentData.species_results.forEach(species => {
-                species.duplicate_groups.forEach(group => {
-                    if (confirmedGroups.has(`${species.species_name}:${group.group_id}`)) {
-                        group.duplicates.forEach(dup => {
-                            paths.push(`${species.species_name}/${dup.filename}`);
-                        });
-                    }
-                });
-            });
-            return paths;
+            // Return array of selected image paths
+            return Array.from(selectedImages);
         }
 
         function showDeleteModal() {
@@ -2659,7 +3065,9 @@ def generate_html_page() -> str:
                     `;
                 }
                 confirmedGroups.clear();
+                selectedImages.clear();
                 updateConfirmedCount();
+                updateDeleteButtonState();
                 document.getElementById('actionBar').style.display = 'none';
                 document.getElementById('stats').style.display = 'none';
             } catch (error) {

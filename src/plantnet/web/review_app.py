@@ -416,6 +416,121 @@ def get_all_species_duplicates(
     }
 
 
+def get_species_outliers(
+    species_name: str,
+    similarity_threshold: float = 0.75,
+    centroid_std_multiplier: float = 2.0,
+) -> Dict[str, Any]:
+    """
+    Get outlier images for a species.
+
+    Outliers are identified as:
+    1. Images with no similar matches above threshold (isolated)
+    2. Images significantly different from species average (far from centroid)
+
+    Args:
+        species_name: Name of the species to analyze
+        similarity_threshold: Images with max similarity below this are "isolated".
+            Lower = more sensitive (more outliers). Default 0.75.
+        centroid_std_multiplier: Images beyond (mean + X * std) distance from
+            centroid are "distant". Lower = more sensitive. Default 2.0.
+
+    Returns dict with outlier information.
+    """
+    if FAISS_STORE is None:
+        return {"error": "FAISS store not available. Pre-computed embeddings required."}
+
+    try:
+        import pickle
+        import numpy as np
+    except ImportError:
+        return {"error": "NumPy required for outlier detection"}
+
+    try:
+        # Get all images for this species
+        species_items = [m for m in FAISS_STORE.metadata if m["species"] == species_name]
+        if len(species_items) < 3:
+            return {
+                "species_name": species_name,
+                "outliers": [],
+                "message": "Not enough images for outlier detection (need at least 3)",
+            }
+
+        # Get their indices and embeddings
+        species_indices = [
+            i for i, m in enumerate(FAISS_STORE.metadata) if m["species"] == species_name
+        ]
+
+        with open(FAISS_STORE.embeddings_dir / "metadata_full.pkl", "rb") as f:
+            full_metadata = pickle.load(f)
+
+        species_embeddings = [full_metadata[i]["embedding"] for i in species_indices]
+        embeddings_array = np.array(species_embeddings, dtype="float32")
+
+        # Normalize embeddings
+        norms = np.linalg.norm(embeddings_array, axis=1, keepdims=True)
+        embeddings_array = embeddings_array / norms
+
+        # Calculate centroid
+        centroid = np.mean(embeddings_array, axis=0)
+        centroid = centroid / np.linalg.norm(centroid)
+
+        # Calculate distance from centroid for each image
+        distances_from_centroid = 1 - np.dot(embeddings_array, centroid)
+
+        # Calculate max similarity to any other image
+        n = len(species_embeddings)
+        max_similarities = []
+        for i in range(n):
+            similarities = [np.dot(embeddings_array[i], embeddings_array[j])
+                          for j in range(n) if i != j]
+            max_similarities.append(max(similarities) if similarities else 0)
+
+        max_similarities = np.array(max_similarities)
+
+        # Identify outliers
+        # Type 1: Isolated (no matches above threshold)
+        isolated_mask = max_similarities < similarity_threshold
+
+        # Type 2: Far from centroid (use mean + multiplier * std as threshold)
+        distance_threshold = np.mean(distances_from_centroid) + centroid_std_multiplier * np.std(distances_from_centroid)
+        far_from_centroid_mask = distances_from_centroid > distance_threshold
+
+        # Combine both types
+        outlier_mask = isolated_mask | far_from_centroid_mask
+
+        outliers = []
+        for idx, is_outlier in enumerate(outlier_mask):
+            if is_outlier:
+                item = species_items[idx]
+                outlier_type = []
+                if isolated_mask[idx]:
+                    outlier_type.append("isolated")
+                if far_from_centroid_mask[idx]:
+                    outlier_type.append("distant")
+
+                outliers.append({
+                    "filename": item["filename"],
+                    "size": item["size"],
+                    "path": f"/image/{species_name}/{item['filename']}",
+                    "max_similarity": float(max_similarities[idx]),
+                    "distance_from_centroid": float(distances_from_centroid[idx]),
+                    "outlier_types": outlier_type,
+                })
+
+        return {
+            "species_name": species_name,
+            "total_images": len(species_items),
+            "outliers": outliers,
+            "outlier_count": len(outliers),
+            "similarity_threshold": similarity_threshold,
+            "centroid_std_multiplier": centroid_std_multiplier,
+            "distance_threshold": float(distance_threshold),
+        }
+    except Exception as e:
+        return {"error": f"Failed to detect outliers: {str(e)}"}
+
+
 def get_species_cnn_similarity(
     species_name: str, similarity_threshold: float, model_name: str = DEFAULT_MODEL
 ) -> Dict[str, Any]:
@@ -532,6 +647,74 @@ def get_species_cnn_similarity(
         "images": images,
         "cnn_available": True,
     }
+
+
+def get_species_combined(
+    species_name: str,
+    similarity_threshold: float = 0.85,
+    hash_size: int = DEFAULT_HASH_SIZE,
+    hamming_threshold: int = DEFAULT_HAMMING_THRESHOLD,
+    outlier_isolation_threshold: float = 0.75,
+    outlier_centroid_multiplier: float = 2.0,
+) -> Dict[str, Any]:
+    """
+    Get combined view with all three detection types:
+    - CNN similarity groups
+    - Direct duplicates (perceptual hash)
+    - Outliers
+
+    Returns dict with all detections marked by type.
+    """
+    results = {
+        "species_name": species_name,
+        "similarity_threshold": similarity_threshold,
+        "hamming_threshold": hamming_threshold,
+        "hash_size": hash_size,
+        "outlier_isolation_threshold": outlier_isolation_threshold,
+        "outlier_centroid_multiplier": outlier_centroid_multiplier,
+        "items": [],
+    }
+
+    # Get CNN similarity groups
+    cnn_result = get_species_cnn_similarity(species_name, similarity_threshold)
+    if "similar_groups" in cnn_result:
+        for group in cnn_result["similar_groups"]:
+            results["items"].append({
+                "type": "cnn_similarity",
+                "group_id": group["group_id"],
+                "images": group["images"],
+                "count": group["count"],
+            })
+
+    # Get direct duplicates
+    dup_result = get_species_duplicates(species_name, hash_size, hamming_threshold)
+    if "duplicate_groups" in dup_result:
+        for group in dup_result["duplicate_groups"]:
+            # Flatten keep and duplicates into single list
+            images = [group["keep"]] + group["duplicates"]
+            results["items"].append({
+                "type": "duplicate",
+                "group_id": group["group_id"],
+                "images": images,
+                "count": len(images),
+                "keep": group["keep"]["filename"],
+            })
+
+    # Get outliers
+    outlier_result = get_species_outliers(species_name, outlier_isolation_threshold, outlier_centroid_multiplier)
+    if "outliers" in outlier_result:
+        # Each outlier is its own "group"
+        for idx, outlier in enumerate(outlier_result["outliers"], 1):
+            results["items"].append({
+                "type": "outlier",
+                "group_id": idx,
+                "images": [outlier],
+                "count": 1,
+                "outlier_types": outlier.get("outlier_types", []),
+            })
+
+    results["total_items"] = len(results["items"])
+    return results
 
 
 def delete_files(file_paths: List[str]) -> Dict[str, Any]:
@@ -716,6 +899,44 @@ class DuplicateReviewHandler(http.server.BaseHTTPRequestHandler):
                 return
 
             result = get_species_cnn_similarity(species_name, threshold, model)
+            self.send_json(result)
+            return
+
+        # API: Get outliers for species
+        if path.startswith("/api/outliers/"):
+            species_name = urllib.parse.unquote(path[14:])
+            threshold = float(
+                query.get("threshold", ["0.75"])[0]
+            )
+            centroid_multiplier = float(
+                query.get("centroid_multiplier", ["2.0"])[0]
+            )
+
+            result = get_species_outliers(species_name, threshold, centroid_multiplier)
+            self.send_json(result)
+            return
+
+        # API: Get combined view for species
+        if path.startswith("/api/combined/"):
+            species_name = urllib.parse.unquote(path[14:])
+            similarity_threshold = float(
+                query.get("similarity_threshold", [str(DEFAULT_SIMILARITY_THRESHOLD)])[0]
+            )
+            hamming_threshold = int(
+                query.get("hamming_threshold", [str(DEFAULT_HAMMING_THRESHOLD)])[0]
+            )
+            hash_size = int(query.get("hash_size", [str(DEFAULT_HASH_SIZE)])[0])
+            outlier_isolation_threshold = float(
+                query.get("outlier_isolation_threshold", ["0.75"])[0]
+            )
+            outlier_centroid_multiplier = float(
+                query.get("outlier_centroid_multiplier", ["2.0"])[0]
+            )
+
+            result = get_species_combined(
+                species_name, similarity_threshold, hash_size, hamming_threshold,
+                outlier_isolation_threshold, outlier_centroid_multiplier
+            )
             self.send_json(result)
             return
 
