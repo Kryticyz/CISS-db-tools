@@ -149,34 +149,48 @@ Download PlantNet data from GBIF:
 ### 3. Build Databases
 
 ```bash
-# Build GBIF database (took 10 minutes for full dataset on my Macbook Pro M4)
-python scripts/data_processing/parse_gbif_db.py --create
+# Activate environment
+conda activate plantnet
 
-# Build counts database (if you have image count CSVs)
-python scripts/data_processing/parse_counts_db.py --create
+# Build GBIF database (10 minutes for full dataset)
+plantnet-db-build --create
+
+# Or use Python directly
+python scripts/data_processing/parse_gbif_db.py --create
 ```
 
 ### 4. Query Data
 
 ```bash
-# Summary of both databases
-python scripts/database/query_unified_db.py --summary
+# Summary of databases
+plantnet-db-query --summary
 
 # Search for a specific species
-python scripts/database/query_unified_db.py --species "Acacia_dealbata" --details
+plantnet-db-query --species "Acacia_dealbata"
 
-# Find species in a country
-python scripts/database/query_gbif.py --country AU --limit 50
+# Or use Python scripts directly
+python scripts/database/query_unified_db.py --summary
 ```
 
 ### 5. Download Images
 
 ```bash
-# Get image URLs for species (from species_list.txt)
-python scripts/images/batch_get_species_urls.py data/reports/species_list.txt
+# Download images for a species
+plantnet-download "Acacia_dealbata" --limit 100
 
-# Download images for all species
-python scripts/images/batch_download_images.py
+# Or use batch workflows
+python workflows/batch/batch_download.py
+```
+
+### 6. Deduplicate Images
+
+```bash
+# Remove duplicate images
+plantnet-deduplicate data/images/by_species/Acacia_dealbata
+
+# Visual review interface
+plantnet-review data/images/by_species
+# Open http://localhost:8000 in your browser
 ```
 
 ---
@@ -185,8 +199,52 @@ python scripts/images/batch_download_images.py
 
 ### Requirements
 
-- **Python 3.7+**
-- **SQLite 3** (included with Python)
+- **macOS 10.15+** (Apple Silicon or Intel)
+- **Conda/Miniconda/Mamba** - For package management
+- **40 GB free disk space** - For data storage
+
+### Quick Install
+
+```bash
+# Clone repository
+git clone https://github.com/yourusername/plantnet.git
+cd plantnet
+
+# Create conda environment
+conda env create -f environment.yml
+conda activate plantnet
+
+# Install package
+pip install -e .
+
+# Verify
+plantnet --version
+```
+
+See [Installation Guide](docs/installation.md) for detailed instructions and troubleshooting.
+
+### Why Conda?
+
+This project now uses **conda** instead of pip to solve critical issues:
+
+✅ **Eliminates OpenMP conflicts** - Single unified library for PyTorch, NumPy, FAISS  
+✅ **Fixes Python 3.13 MPS crashes** - Uses stable Python 3.11  
+✅ **Better dependency management** - Conda resolves complex C++ library dependencies  
+
+Previous pip installations had multiple `libomp.dylib` conflicts causing crashes. Conda solves this automatically.
+
+### Migrating from Pip
+
+If you have an existing pip installation:
+
+```bash
+# Remove old environment
+rm -rf .venv/
+
+# Follow Quick Install steps above
+```
+
+Your data directory remains unchanged.
 
 ### Python Packages
 

@@ -10,3 +10,22 @@ requests>=2.31.0
 
 # Required for find_synonyms.py (Claude API with web search)
 anthropic>=0.40.0
+
+# Required for image deduplication (deduplicate_images.py, species_pipeline.py)
+Pillow>=10.0.0
+imagehash>=4.3.0
+
+# Required for CNN similarity analysis (cnn_similarity.py)
+# Note: For CPU-only, use: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Required for batch embedding generation and vector search (batch_generate_embeddings.py, review_duplicates.py)
+faiss-cpu>=1.7.4           # FAISS vector search (CPU-only, sufficient for 11k vectors)
+tqdm>=4.65.0               # Progress bars for batch processing
+
+# Required for outlier detection (detect_outliers.py)
+scikit-learn>=1.3.0        # Isolation Forest and other ML tools
+pandas>=2.0.0              # DataFrames for analysis
+umap-learn>=0.5.0          # UMAP dimensionality reduction for visualization
+matplotlib>=3.7.0          # Visualization and plotting
