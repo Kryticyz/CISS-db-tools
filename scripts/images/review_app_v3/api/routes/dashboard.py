@@ -18,10 +18,12 @@ if str(_package_dir) not in sys.path:
 from config import get_settings
 from models.species import AppStatus, SpeciesInfo, SpeciesSummary
 from api.deps import (
+    get_deletion_queue,
     get_detection_service,
     get_faiss_store,
     get_outlier_service,
 )
+from services.deletion_queue import DeletionQueueService
 from services.detection_service import DetectionService
 from services.outlier_service import OutlierService
 
@@ -31,6 +33,7 @@ router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 @router.get("/summary", response_model=SpeciesSummary)
 async def get_dashboard_summary(
     detection_service: DetectionService = Depends(get_detection_service),
+    deletion_queue: DeletionQueueService = Depends(get_deletion_queue),
 ) -> SpeciesSummary:
     """
     Get summary of all species with basic info.
@@ -44,6 +47,9 @@ async def get_dashboard_summary(
     # Get species list
     species_names = detection_service.get_species_list()
 
+    # Get processed species
+    processed_species = deletion_queue.get_processed_species()
+
     # Build species info list (fast - just counts files)
     species_list: list[SpeciesInfo] = []
     total_images = 0
@@ -52,6 +58,9 @@ async def get_dashboard_summary(
         info = detection_service.get_species_info(name)
         if info is None:
             continue
+
+        # Mark as processed if in processed set
+        info.processed = name in processed_species
 
         species_list.append(info)
         total_images += info.image_count

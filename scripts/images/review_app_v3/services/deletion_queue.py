@@ -3,8 +3,10 @@ Deletion queue service for batch deletion management.
 
 Manages an in-memory queue of files marked for deletion,
 with preview and confirmation before actual deletion.
+Also tracks which species have been processed (had deletions).
 """
 
+import json
 import sys
 import threading
 from datetime import datetime
@@ -31,18 +33,25 @@ class DeletionQueueService:
 
     Files are added to the queue with a reason, and can be
     previewed before confirming actual deletion.
+    Tracks processed species persistently in a JSON file.
     """
 
-    def __init__(self, base_dir: Path):
+    def __init__(self, base_dir: Path, data_dir: Optional[Path] = None):
         """
         Initialize deletion queue service.
 
         Args:
             base_dir: Base directory for path validation
+            data_dir: Directory for persistence files (defaults to base_dir)
         """
         self.base_dir = base_dir.resolve()
+        self._data_dir = (data_dir or base_dir).resolve()
         self._queue: dict[str, QueuedFile] = {}  # path -> QueuedFile
+        self._processed_species: set[str] = set()
         self._lock = threading.Lock()
+
+        # Load processed species from persistence
+        self._load_processed_species()
 
     def add_file(
         self,
@@ -252,6 +261,12 @@ class DeletionQueueService:
                     except Exception:
                         pass  # Don't fail deletion due to cache issues
 
+            # Mark affected species as processed
+            if deleted:
+                for species in affected_species:
+                    self._processed_species.add(species)
+                self._save_processed_species()
+
             return DeletionResult(
                 success=len(failed) == 0,
                 deleted_count=len(deleted),
@@ -269,3 +284,70 @@ class DeletionQueueService:
                 return f"{size_bytes:.1f} {unit}"
             size_bytes /= 1024
         return f"{size_bytes:.1f} TB"
+
+    @property
+    def _processed_file(self) -> Path:
+        """Path to processed species JSON file."""
+        return self._data_dir / "processed_species.json"
+
+    def _load_processed_species(self) -> None:
+        """Load processed species from JSON file."""
+        try:
+            if self._processed_file.exists():
+                with open(self._processed_file, "r") as f:
+                    data = json.load(f)
+                    self._processed_species = set(data.get("species", []))
+        except Exception:
+            # If loading fails, start with empty set
+            self._processed_species = set()
+
+    def _save_processed_species(self) -> None:
+        """Save processed species to JSON file."""
+        try:
+            self._data_dir.mkdir(parents=True, exist_ok=True)
+            with open(self._processed_file, "w") as f:
+                json.dump(
+                    {"species": sorted(self._processed_species)},
+                    f,
+                    indent=2,
+                )
+        except Exception:
+            pass  # Don't fail operations due to persistence issues
+
+    def get_processed_species(self) -> set[str]:
+        """
+        Get set of species that have had deletions confirmed.
+
+        Returns:
+            Set of species names that have been processed
+        """
+        return self._processed_species.copy()
+
+    def is_processed(self, species: str) -> bool:
+        """
+        Check if a species has been processed.
+
+        Args:
+            species: Species name to check
+
+        Returns:
+            True if species has had confirmed deletions
+        """
+        return species in self._processed_species
+
+    def mark_species_processed(self, species: str) -> bool:
+        """
+        Mark a species as processed (reviewed with no deletions needed).
+
+        Args:
+            species: Species name to mark as processed
+
+        Returns:
+            True if newly marked, False if already processed
+        """
+        if species in self._processed_species:
+            return False
+
+        self._processed_species.add(species)
+        self._save_processed_species()
+        return True

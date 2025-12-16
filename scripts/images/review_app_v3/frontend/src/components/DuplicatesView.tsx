@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { DuplicateGroup } from '../types';
+import { useDeletionQueue } from '../context/DeletionQueueContext';
 import ImageCard from './ImageCard';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage from './ErrorMessage';
@@ -111,6 +112,8 @@ interface DuplicateGroupCardProps {
 }
 
 function DuplicateGroupCard({ group, species, onAddToQueue }: DuplicateGroupCardProps) {
+  const { isInQueue, toggleQueueItem } = useDeletionQueue();
+
   return (
     <div className="border border-gray-200 rounded-lg p-4">
       {/* Group header */}
@@ -128,12 +131,16 @@ function DuplicateGroupCard({ group, species, onAddToQueue }: DuplicateGroupCard
 
       {/* Images */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        {/* Keep image */}
+        {/* Keep image - also clickable for toggle */}
         <div className="relative">
           <ImageCard
             species={species}
             filename={group.keep.filename}
             size={group.keep.size}
+            isSelected={isInQueue(species, group.keep.filename)}
+            onToggleSelect={() =>
+              toggleQueueItem(species, group.keep.filename, 'duplicate', group.keep.size)
+            }
           />
           <div className="absolute top-2 left-2">
             <span className="badge badge-clean">Keep</span>
@@ -147,6 +154,10 @@ function DuplicateGroupCard({ group, species, onAddToQueue }: DuplicateGroupCard
               species={species}
               filename={img.filename}
               size={img.size}
+              isSelected={isInQueue(species, img.filename)}
+              onToggleSelect={() =>
+                toggleQueueItem(species, img.filename, 'duplicate', img.size)
+              }
             />
             <div className="absolute top-2 left-2">
               <span className="badge badge-duplicate">Duplicate</span>

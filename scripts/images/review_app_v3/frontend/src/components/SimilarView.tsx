@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { SimilarGroup } from '../types';
+import { useDeletionQueue } from '../context/DeletionQueueContext';
 import ImageCard from './ImageCard';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage from './ErrorMessage';
@@ -48,6 +49,11 @@ function SimilarView({
     );
   }
 
+  // Filter out groups with >100 images (too large to display)
+  const MAX_GROUP_SIZE = 100;
+  const filteredGroups = result.similar_groups.filter(g => g.count <= MAX_GROUP_SIZE);
+  const skippedCount = result.similar_groups.length - filteredGroups.length;
+
   // For similar images, we keep the first (largest) and queue the rest
   const handleAddGroupToQueue = (group: SimilarGroup) => {
     // Skip the first image (keep it), queue the rest
@@ -59,7 +65,7 @@ function SimilarView({
   };
 
   const handleAddAllToQueue = () => {
-    const allFiles = result.similar_groups.flatMap((group) =>
+    const allFiles = filteredGroups.flatMap((group) =>
       group.images.slice(1).map((img) => ({
         filename: img.filename,
         size: img.size,
@@ -68,7 +74,7 @@ function SimilarView({
     onAddToQueue(allFiles);
   };
 
-  const totalToDelete = result.similar_groups.reduce(
+  const totalToDelete = filteredGroups.reduce(
     (sum, g) => sum + g.images.length - 1,
     0
   );
@@ -79,12 +85,17 @@ function SimilarView({
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-gray-600">
-            Found <span className="font-semibold">{result.similar_groups.length}</span> groups
+            Found <span className="font-semibold">{filteredGroups.length}</span> groups
             of similar images
             {result.from_faiss && (
               <span className="text-green-600 ml-2">(using FAISS)</span>
             )}
           </p>
+          {skippedCount > 0 && (
+            <p className="text-xs text-gray-400 mt-1">
+              {skippedCount} group{skippedCount > 1 ? 's' : ''} with &gt;{MAX_GROUP_SIZE} images hidden
+            </p>
+          )}
         </div>
         {totalToDelete > 0 && (
           <button
@@ -98,7 +109,7 @@ function SimilarView({
 
       {/* Similar groups */}
       <div className="space-y-6">
-        {result.similar_groups.map((group) => (
+        {filteredGroups.map((group) => (
           <SimilarGroupCard
             key={group.group_id}
             group={group}
@@ -118,6 +129,7 @@ interface SimilarGroupCardProps {
 }
 
 function SimilarGroupCard({ group, species, onAddToQueue }: SimilarGroupCardProps) {
+  const { isInQueue, toggleQueueItem } = useDeletionQueue();
   const toDelete = group.images.length - 1;
 
   return (
@@ -145,6 +157,10 @@ function SimilarGroupCard({ group, species, onAddToQueue }: SimilarGroupCardProp
               species={species}
               filename={img.filename}
               size={img.size}
+              isSelected={isInQueue(species, img.filename)}
+              onToggleSelect={() =>
+                toggleQueueItem(species, img.filename, 'similar', img.size)
+              }
             />
             <div className="absolute top-2 left-2">
               {index === 0 ? (

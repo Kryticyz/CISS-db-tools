@@ -5,9 +5,11 @@ interface ImageCardProps {
   species: string;
   filename: string;
   size: number;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
 }
 
-function ImageCard({ species, filename, size }: ImageCardProps) {
+function ImageCard({ species, filename, size, isSelected, onToggleSelect }: ImageCardProps) {
   const [hasError, setHasError] = useState(false);
   const imageUrl = api.images.url(species, filename);
 
@@ -17,8 +19,19 @@ function ImageCard({ species, filename, size }: ImageCardProps) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const handleClick = () => {
+    if (onToggleSelect) {
+      onToggleSelect();
+    }
+  };
+
   return (
-    <div className="image-card group">
+    <div
+      className={`image-card group ${onToggleSelect ? 'cursor-pointer' : ''} ${
+        isSelected ? 'ring-2 ring-red-500 ring-offset-2' : ''
+      }`}
+      onClick={handleClick}
+    >
       {hasError ? (
         <div className="w-full h-32 bg-gray-200 flex items-center justify-center">
           <span className="text-gray-400 text-xs">Failed to load</span>
@@ -31,6 +44,15 @@ function ImageCard({ species, filename, size }: ImageCardProps) {
           onError={() => setHasError(true)}
           className="w-full h-32 object-cover"
         />
+      )}
+
+      {/* Selection indicator */}
+      {isSelected && (
+        <div className="absolute top-2 right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
       )}
 
       {/* Info overlay on hover */}

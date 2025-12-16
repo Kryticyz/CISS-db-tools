@@ -11,6 +11,9 @@ class SpeciesInfo(BaseModel):
     name: str = Field(description="Species name (underscore-separated)")
     image_count: int = Field(ge=0, description="Total number of images")
     has_embeddings: bool = Field(description="Whether FAISS embeddings exist")
+    processed: bool = Field(
+        default=False, description="Whether this species has had confirmed deletions"
+    )
     duplicate_count: Optional[int] = Field(
         default=None, description="Number of duplicate images detected"
     )

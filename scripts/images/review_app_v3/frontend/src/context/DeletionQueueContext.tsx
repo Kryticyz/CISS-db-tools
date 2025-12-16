@@ -20,6 +20,15 @@ interface DeletionQueueContextValue {
   getPreview: () => Promise<DeletionPreview>;
   confirmDeletion: () => Promise<DeletionResult>;
 
+  // Toggle helpers for click-to-select
+  isInQueue: (species: string, filename: string) => boolean;
+  toggleQueueItem: (
+    species: string,
+    filename: string,
+    reason: DeletionReason,
+    size?: number
+  ) => Promise<void>;
+
   // UI
   toggleSidebar: () => void;
   openSidebar: () => void;
@@ -81,8 +90,6 @@ export function DeletionQueueProvider({ children }: ProviderProps) {
         setError(null);
         await api.deletion.addToQueue(files, reason);
         await refreshQueue();
-        // Open sidebar to show what was added
-        setIsOpen(true);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add to queue');
         throw err;
@@ -153,6 +160,31 @@ export function DeletionQueueProvider({ children }: ProviderProps) {
     }
   }, [refreshQueue]);
 
+  // Check if a file is in the queue
+  const isInQueue = useCallback(
+    (species: string, filename: string) => {
+      return queue.some((f) => f.species === species && f.filename === filename);
+    },
+    [queue]
+  );
+
+  // Toggle a file in/out of queue (for click-to-select)
+  const toggleQueueItem = useCallback(
+    async (
+      species: string,
+      filename: string,
+      reason: DeletionReason,
+      size?: number
+    ) => {
+      if (isInQueue(species, filename)) {
+        await removeFromQueue(species, filename);
+      } else {
+        await addToQueue([{ species, filename, size }], reason);
+      }
+    },
+    [isInQueue, removeFromQueue, addToQueue]
+  );
+
   // UI actions
   const toggleSidebar = useCallback(() => setIsOpen((prev) => !prev), []);
   const openSidebar = useCallback(() => setIsOpen(true), []);
@@ -169,6 +201,8 @@ export function DeletionQueueProvider({ children }: ProviderProps) {
     refreshQueue,
     getPreview,
     confirmDeletion,
+    isInQueue,
+    toggleQueueItem,
     toggleSidebar,
     openSidebar,
     closeSidebar,

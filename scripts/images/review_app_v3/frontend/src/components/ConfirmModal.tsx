@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useDeletionQueue } from '../context/DeletionQueueContext';
 import type { DeletionPreview, DeletionResult } from '../types';
 
@@ -7,7 +9,9 @@ interface ConfirmModalProps {
 }
 
 function ConfirmModal({ onClose }: ConfirmModalProps) {
-  const { getPreview, confirmDeletion, isLoading } = useDeletionQueue();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { getPreview, confirmDeletion, isLoading, closeSidebar } = useDeletionQueue();
   const [preview, setPreview] = useState<DeletionPreview | null>(null);
   const [result, setResult] = useState<DeletionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,10 +49,21 @@ function ConfirmModal({ onClose }: ConfirmModalProps) {
     }
   };
 
+  // Handle closing after deletion result - navigate to dashboard
+  const handleResultClose = () => {
+    // Invalidate dashboard query to refresh processed status
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    // Close sidebar and modal
+    closeSidebar();
+    onClose();
+    // Navigate to dashboard
+    navigate('/dashboard');
+  };
+
   // Show result view
   if (result) {
     return (
-      <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-backdrop" onClick={handleResultClose}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
             <h3 className="text-lg font-semibold">
@@ -80,11 +95,15 @@ function ConfirmModal({ onClose }: ConfirmModalProps) {
                   </ul>
                 </div>
               )}
+
+              <p className="text-sm text-green-600">
+                Affected species have been marked as processed.
+              </p>
             </div>
           </div>
           <div className="modal-footer">
-            <button onClick={onClose} className="btn btn-primary">
-              Close
+            <button onClick={handleResultClose} className="btn btn-primary">
+              Back to Dashboard
             </button>
           </div>
         </div>

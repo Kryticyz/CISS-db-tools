@@ -145,6 +145,12 @@ export const api = {
       fetchJson<DeletionResult>('/api/deletion/confirm', {
         method: 'POST',
       }),
+
+    markComplete: (species: string) =>
+      fetchJson<{ success: boolean; species: string; newly_marked: boolean }>(
+        `/api/deletion/mark-complete/${encodeURIComponent(species)}`,
+        { method: 'POST' }
+      ),
   },
 
   // Health check

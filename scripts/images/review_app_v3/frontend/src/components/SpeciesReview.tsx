@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { AnalysisParameters, DeletionReason } from '../types';
 import { useDeletionQueue } from '../context/DeletionQueueContext';
@@ -8,14 +8,17 @@ import ParameterControls from './ParameterControls';
 import DuplicatesView from './DuplicatesView';
 import SimilarView from './SimilarView';
 import OutliersView from './OutliersView';
-import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage from './ErrorMessage';
 
 type Tab = 'duplicates' | 'similar' | 'outliers';
 
 function SpeciesReview() {
   const { species } = useParams<{ species: string }>();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>('duplicates');
+  const [showMarkCompleteModal, setShowMarkCompleteModal] = useState(false);
+  const [isMarkingComplete, setIsMarkingComplete] = useState(false);
   const [params, setParams] = useState<AnalysisParameters>({
     hash_size: 16,
     hamming_threshold: 5,
@@ -57,6 +60,24 @@ function SpeciesReview() {
     [species, addToQueue]
   );
 
+  // Handler for marking species as complete
+  const handleMarkComplete = useCallback(async () => {
+    if (!species) return;
+    setIsMarkingComplete(true);
+    try {
+      await api.deletion.markComplete(decodeURIComponent(species));
+      // Invalidate dashboard query to refresh processed status
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      setShowMarkCompleteModal(false);
+      // Navigate back to dashboard
+      navigate('/dashboard');
+    } catch (error) {
+      console.error('Failed to mark species as complete:', error);
+    } finally {
+      setIsMarkingComplete(false);
+    }
+  }, [species, queryClient, navigate]);
+
   if (!species) {
     return <ErrorMessage message="No species specified" />;
   }
@@ -78,6 +99,12 @@ function SpeciesReview() {
             {decodedSpecies.replace(/_/g, ' ')}
           </h1>
         </div>
+        <button
+          onClick={() => setShowMarkCompleteModal(true)}
+          className="btn bg-green-600 hover:bg-green-700 text-white"
+        >
+          Mark as Complete
+        </button>
       </div>
 
       {/* Parameter controls */}
@@ -144,6 +171,39 @@ function SpeciesReview() {
           )}
         </div>
       </div>
+
+      {/* Mark Complete Confirmation Modal */}
+      {showMarkCompleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                Mark Species as Complete?
+              </h3>
+              <p className="text-gray-600 mb-4">
+                This will mark <strong>{decodedSpecies.replace(/_/g, ' ')}</strong> as
+                reviewed with no deletions needed. You can still review it again later.
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowMarkCompleteModal(false)}
+                  className="btn bg-gray-100 hover:bg-gray-200 text-gray-700"
+                  disabled={isMarkingComplete}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleMarkComplete}
+                  className="btn bg-green-600 hover:bg-green-700 text-white"
+                  disabled={isMarkingComplete}
+                >
+                  {isMarkingComplete ? 'Marking...' : 'Confirm'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

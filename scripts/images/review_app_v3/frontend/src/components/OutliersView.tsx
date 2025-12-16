@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
+import { useDeletionQueue } from '../context/DeletionQueueContext';
 import ImageCard from './ImageCard';
 import LoadingSpinner from './LoadingSpinner';
 import ErrorMessage from './ErrorMessage';
@@ -15,6 +16,7 @@ function OutliersView({
   thresholdPercentile,
   onAddToQueue,
 }: OutliersViewProps) {
+  const { isInQueue, toggleQueueItem } = useDeletionQueue();
   const {
     data: result,
     isLoading,
@@ -95,6 +97,10 @@ function OutliersView({
               species={species}
               filename={outlier.filename}
               size={outlier.size}
+              isSelected={isInQueue(species, outlier.filename)}
+              onToggleSelect={() =>
+                toggleQueueItem(species, outlier.filename, 'outlier', outlier.size)
+              }
             />
             <div className="absolute top-2 left-2">
               <span className="badge badge-outlier">Outlier</span>

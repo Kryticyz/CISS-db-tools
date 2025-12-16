@@ -131,3 +131,27 @@ async def confirm_deletion(
         detection_service.invalidate_cache(species)
 
     return deletion_queue.confirm_deletion(invalidate_callback)
+
+
+@router.post("/mark-complete/{species}")
+async def mark_species_complete(
+    species: str,
+    deletion_queue: DeletionQueueService = Depends(get_deletion_queue),
+) -> dict:
+    """
+    Mark a species as complete/processed without any deletions.
+
+    Use this when a species has been reviewed and no deletions are needed.
+
+    Args:
+        species: Species name to mark as complete
+
+    Returns:
+        Success status and whether it was newly marked
+    """
+    newly_marked = deletion_queue.mark_species_processed(species)
+    return {
+        "success": True,
+        "species": species,
+        "newly_marked": newly_marked,
+    }

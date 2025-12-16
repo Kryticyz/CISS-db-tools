@@ -3,6 +3,7 @@ export interface SpeciesInfo {
   name: string;
   image_count: number;
   has_embeddings: boolean;
+  processed?: boolean;
   duplicate_count?: number;
   similar_count?: number;
   outlier_count?: number;

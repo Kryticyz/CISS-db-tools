@@ -99,7 +99,9 @@ function SpeciesCard({ species }: SpeciesCardProps) {
   return (
     <Link
       to={`/review/${encodeURIComponent(species.name)}`}
-      className="card hover:shadow-lg transition-shadow"
+      className={`card hover:shadow-lg transition-shadow ${
+        species.processed ? 'border-green-300 bg-green-50/50' : ''
+      }`}
     >
       <div className="p-4">
         {/* Header */}
@@ -107,11 +109,21 @@ function SpeciesCard({ species }: SpeciesCardProps) {
           <h3 className="font-medium text-gray-900 truncate" title={species.name}>
             {species.name.replace(/_/g, ' ')}
           </h3>
-          {species.has_embeddings && (
-            <span className="text-green-500" title="Embeddings available">
-              ✓
-            </span>
-          )}
+          <div className="flex items-center gap-1">
+            {species.processed && (
+              <span
+                className="bg-green-100 text-green-700 text-xs px-1.5 py-0.5 rounded"
+                title="This species has been reviewed"
+              >
+                Done
+              </span>
+            )}
+            {species.has_embeddings && (
+              <span className="text-green-500" title="Embeddings available">
+                ✓
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Image count */}
