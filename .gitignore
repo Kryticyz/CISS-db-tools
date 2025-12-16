@@ -64,3 +64,9 @@ data/reports/*.txt
 
 # synonyms
 data/processed/synonyms/*
+
+# frontend shizz
+node_modules/
+
+# robo
+CLAUDE.md
