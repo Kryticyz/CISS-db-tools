@@ -29,8 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-# Supported image extensions
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+from utils import IMAGE_EXTENSIONS, UnionFind, get_image_files
 
 # Default hash size for perceptual hashing (higher = more precise but slower)
 DEFAULT_HASH_SIZE = 16
@@ -183,24 +182,7 @@ def find_duplicate_groups(
     if n == 0:
         return []
 
-    # Union-Find data structure
-    parent = list(range(n))
-    rank = [0] * n
-
-    def find(x):
-        if parent[x] != x:
-            parent[x] = find(parent[x])
-        return parent[x]
-
-    def union(x, y):
-        px, py = find(x), find(y)
-        if px == py:
-            return
-        if rank[px] < rank[py]:
-            px, py = py, px
-        parent[py] = px
-        if rank[px] == rank[py]:
-            rank[px] += 1
+    uf = UnionFind(n)
 
     # Compare all pairs and union similar images
     for i in range(n):
@@ -214,16 +196,10 @@ def find_duplicate_groups(
 
             distance = hamming_distance(hash_i, hash_j)
             if distance <= hamming_threshold:
-                union(i, j)
+                uf.union(i, j)
 
-    # Group paths by their root parent
-    groups: Dict[int, Set[Path]] = defaultdict(set)
-    for i, path in enumerate(paths):
-        root = find(i)
-        groups[root].add(path)
-
-    # Return only groups with more than one image (actual duplicates)
-    return [group for group in groups.values() if len(group) > 1]
+    # Convert index groups to path groups
+    return [{paths[i] for i in members} for members in uf.groups_with_multiple()]
 
 
 def select_images_to_keep(duplicate_group: Set[Path]) -> Tuple[Path, List[Path]]:
@@ -247,25 +223,6 @@ def select_images_to_keep(duplicate_group: Set[Path]) -> Tuple[Path, List[Path]]
     delete = sorted_paths[1:]
 
     return keep, delete
-
-
-def get_image_files(directory: Path) -> List[Path]:
-    """
-    Get all image files in a directory.
-
-    Args:
-        directory: Path to the directory
-
-    Returns:
-        List of image file paths
-    """
-    image_files = []
-
-    for file_path in directory.iterdir():
-        if file_path.is_file() and file_path.suffix.lower() in IMAGE_EXTENSIONS:
-            image_files.append(file_path)
-
-    return sorted(image_files)
 
 
 def deduplicate_species_images(

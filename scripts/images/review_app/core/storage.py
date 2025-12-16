@@ -2,8 +2,13 @@
 FAISS-based embedding storage for fast similarity search.
 """
 
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# Add parent directories to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from utils import UnionFind
 
 
 class FAISSEmbeddingStore:
@@ -25,6 +30,10 @@ class FAISSEmbeddingStore:
         with open(embeddings_dir / "metadata.pkl", "rb") as f:
             self.metadata = pickle.load(f)
 
+        # Cache full metadata at init time instead of reading on every search
+        with open(embeddings_dir / "metadata_full.pkl", "rb") as f:
+            self.full_metadata = pickle.load(f)
+
         print(f"Loaded FAISS index with {self.index.ntotal} vectors")
 
     def search_species(
@@ -32,8 +41,6 @@ class FAISSEmbeddingStore:
     ) -> List[Dict[str, Any]]:
         """Find similar images within a species using cached embeddings."""
         try:
-            import pickle
-
             import numpy as np
         except ImportError:
             return []
@@ -48,11 +55,10 @@ class FAISSEmbeddingStore:
             i for i, m in enumerate(self.metadata) if m["species"] == species_name
         ]
 
-        # Extract their embeddings (need full metadata for this)
-        with open(self.embeddings_dir / "metadata_full.pkl", "rb") as f:
-            full_metadata = pickle.load(f)
-
-        species_embeddings = [full_metadata[i]["embedding"] for i in species_indices]
+        # Use cached full metadata instead of reading from file each time
+        species_embeddings = [
+            self.full_metadata[i]["embedding"] for i in species_indices
+        ]
         embeddings_array = np.array(species_embeddings, dtype="float32")
 
         # Normalize for cosine similarity
@@ -62,57 +68,37 @@ class FAISSEmbeddingStore:
 
         # Find similar pairs using threshold
         n = len(species_embeddings)
-
-        # Union-Find for grouping
-        parent = list(range(n))
-
-        def find(x):
-            if parent[x] != x:
-                parent[x] = find(parent[x])
-            return parent[x]
-
-        def union(x, y):
-            px, py = find(x), find(y)
-            if px != py:
-                parent[py] = px
+        uf = UnionFind(n)
 
         # Compare all pairs
         for i in range(n):
             for j in range(i + 1, n):
                 sim = np.dot(embeddings_array[i], embeddings_array[j])
                 if sim >= threshold:
-                    union(i, j)
-
-        # Group by root
-        groups_dict = {}
-        for i in range(n):
-            root = find(i)
-            if root not in groups_dict:
-                groups_dict[root] = []
-            groups_dict[root].append(species_items[i])
+                    uf.union(i, j)
 
         # Format as groups (only groups with >1 image)
         result_groups = []
         group_id = 1
-        for group_items in groups_dict.values():
-            if len(group_items) > 1:
-                # Sort by size
-                group_items.sort(key=lambda x: -x["size"])
-                result_groups.append(
-                    {
-                        "group_id": group_id,
-                        "images": [
-                            {
-                                "filename": item["filename"],
-                                "size": item["size"],
-                                "path": f"/image/{species_name}/{item['filename']}",
-                            }
-                            for item in group_items
-                        ],
-                        "count": len(group_items),
-                    }
-                )
-                group_id += 1
+        for members in uf.groups_with_multiple():
+            group_items = [species_items[i] for i in members]
+            # Sort by size
+            group_items.sort(key=lambda x: -x["size"])
+            result_groups.append(
+                {
+                    "group_id": group_id,
+                    "images": [
+                        {
+                            "filename": item["filename"],
+                            "size": item["size"],
+                            "path": f"/image/{species_name}/{item['filename']}",
+                        }
+                        for item in group_items
+                    ],
+                    "count": len(group_items),
+                }
+            )
+            group_id += 1
 
         return result_groups
 
@@ -129,14 +115,14 @@ def init_faiss_store(embeddings_dir: Path) -> Optional[FAISSEmbeddingStore]:
     """Initialize FAISS store if embeddings exist."""
     # Check directory exists
     if not embeddings_dir.exists():
-        print(f"⚠️  Embeddings directory not found: {embeddings_dir.absolute()}")
+        print(f"Embeddings directory not found: {embeddings_dir.absolute()}")
         print(f"   Current working directory: {Path.cwd()}")
         return None
 
     # Check index file exists
     index_file = embeddings_dir / "embeddings.index"
     if not index_file.exists():
-        print(f"⚠️  embeddings.index not found in: {embeddings_dir.absolute()}")
+        print(f"embeddings.index not found in: {embeddings_dir.absolute()}")
         try:
             files = list(embeddings_dir.iterdir())
             print(
@@ -149,13 +135,19 @@ def init_faiss_store(embeddings_dir: Path) -> Optional[FAISSEmbeddingStore]:
     # Check metadata file exists
     metadata_file = embeddings_dir / "metadata.pkl"
     if not metadata_file.exists():
-        print(f"⚠️  metadata.pkl not found in: {embeddings_dir.absolute()}")
+        print(f"metadata.pkl not found in: {embeddings_dir.absolute()}")
+        return None
+
+    # Check full metadata file exists
+    full_metadata_file = embeddings_dir / "metadata_full.pkl"
+    if not full_metadata_file.exists():
+        print(f"metadata_full.pkl not found in: {embeddings_dir.absolute()}")
         return None
 
     # Try to load
     try:
         return FAISSEmbeddingStore(embeddings_dir)
     except Exception as e:
-        print(f"⚠️  Could not load FAISS store: {e}")
+        print(f"Could not load FAISS store: {e}")
         print(f"   Embeddings directory: {embeddings_dir.absolute()}")
         return None

@@ -89,18 +89,44 @@ class DetectionAPI:
         )
 
     def delete_files(self, base_dir: Path, file_paths: List[str]) -> Dict[str, Any]:
-        """Delete the specified files."""
-        return detection.delete_files(base_dir, file_paths)
+        """Delete the specified files and invalidate affected caches."""
+        result = detection.delete_files(base_dir, file_paths)
 
-    def clear_hash_cache(self):
+        # Invalidate caches for affected species
+        affected_species = result.get("affected_species", [])
+        for species_name in affected_species:
+            self.invalidate_species_cache(species_name)
+
+        return result
+
+    def invalidate_species_cache(self, species_name: str) -> None:
+        """
+        Invalidate all cache entries for a specific species.
+
+        This should be called after files are deleted from a species directory
+        to prevent stale cache data.
+        """
+        # Invalidate hash cache entries for this species
+        keys_to_remove = [
+            k for k in self.hash_cache if k.startswith(f"{species_name}_")
+        ]
+        for key in keys_to_remove:
+            del self.hash_cache[key]
+
+        # Invalidate CNN cache entries for this species
+        keys_to_remove = [k for k in self.cnn_cache if k.startswith(f"{species_name}_")]
+        for key in keys_to_remove:
+            del self.cnn_cache[key]
+
+    def clear_hash_cache(self) -> None:
         """Clear the hash cache."""
         self.hash_cache.clear()
 
-    def clear_cnn_cache(self):
+    def clear_cnn_cache(self) -> None:
         """Clear the CNN cache."""
         self.cnn_cache.clear()
 
-    def clear_all_caches(self):
+    def clear_all_caches(self) -> None:
         """Clear all caches."""
         self.clear_hash_cache()
         self.clear_cnn_cache()

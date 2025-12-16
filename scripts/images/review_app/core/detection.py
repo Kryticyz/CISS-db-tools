@@ -2,32 +2,21 @@
 Core detection logic for duplicates and CNN similarity.
 """
 
-import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
-# Import deduplication module
-try:
-    from deduplicate_images import (
-        DEFAULT_HAMMING_THRESHOLD,
-        DEFAULT_HASH_SIZE,
-        compute_image_hash,
-        find_duplicate_groups,
-        get_image_files,
-        select_images_to_keep,
-    )
-except ImportError:
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from deduplicate_images import (
-        DEFAULT_HAMMING_THRESHOLD,
-        DEFAULT_HASH_SIZE,
-        compute_image_hash,
-        find_duplicate_groups,
-        get_image_files,
-        select_images_to_keep,
-    )
+# Add parent directories to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from deduplicate_images import (
+    DEFAULT_HAMMING_THRESHOLD,
+    DEFAULT_HASH_SIZE,
+    compute_image_hash,
+    find_duplicate_groups,
+    select_images_to_keep,
+)
+from utils import get_image_files
 
 # Try to import CNN similarity module
 CNN_AVAILABLE = False
@@ -439,10 +428,11 @@ def delete_files(base_dir: Path, file_paths: List[str]) -> Dict[str, Any]:
         file_paths: List of relative paths like "species_name/filename.jpg"
 
     Returns:
-        Dict with deletion results
+        Dict with deletion results, including affected_species for cache invalidation
     """
     deleted = []
     errors = []
+    affected_species: Set[str] = set()
 
     for rel_path in file_paths:
         try:
@@ -455,6 +445,11 @@ def delete_files(base_dir: Path, file_paths: List[str]) -> Dict[str, Any]:
             if not full_path.exists():
                 errors.append({"path": rel_path, "error": "File not found"})
                 continue
+
+            # Extract species name from path (first component)
+            path_parts = rel_path.split("/")
+            if path_parts:
+                affected_species.add(path_parts[0])
 
             # Delete the file
             full_path.unlink()
@@ -470,4 +465,5 @@ def delete_files(base_dir: Path, file_paths: List[str]) -> Dict[str, Any]:
         "deleted": deleted,
         "error_count": len(errors),
         "errors": errors,
+        "affected_species": list(affected_species),
     }
