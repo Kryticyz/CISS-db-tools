@@ -127,10 +127,35 @@ class FAISSEmbeddingStore:
 
 def init_faiss_store(embeddings_dir: Path) -> Optional[FAISSEmbeddingStore]:
     """Initialize FAISS store if embeddings exist."""
-    if embeddings_dir.exists() and (embeddings_dir / "embeddings.index").exists():
+    # Check directory exists
+    if not embeddings_dir.exists():
+        print(f"⚠️  Embeddings directory not found: {embeddings_dir.absolute()}")
+        print(f"   Current working directory: {Path.cwd()}")
+        return None
+
+    # Check index file exists
+    index_file = embeddings_dir / "embeddings.index"
+    if not index_file.exists():
+        print(f"⚠️  embeddings.index not found in: {embeddings_dir.absolute()}")
         try:
-            return FAISSEmbeddingStore(embeddings_dir)
-        except Exception as e:
-            print(f"Warning: Could not load FAISS store: {e}")
-            return None
-    return None
+            files = list(embeddings_dir.iterdir())
+            print(
+                f"   Directory contains {len(files)} items: {[f.name for f in files[:5]]}"
+            )
+        except Exception:
+            pass
+        return None
+
+    # Check metadata file exists
+    metadata_file = embeddings_dir / "metadata.pkl"
+    if not metadata_file.exists():
+        print(f"⚠️  metadata.pkl not found in: {embeddings_dir.absolute()}")
+        return None
+
+    # Try to load
+    try:
+        return FAISSEmbeddingStore(embeddings_dir)
+    except Exception as e:
+        print(f"⚠️  Could not load FAISS store: {e}")
+        print(f"   Embeddings directory: {embeddings_dir.absolute()}")
+        return None

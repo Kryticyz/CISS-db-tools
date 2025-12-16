@@ -31,26 +31,68 @@ from pathlib import Path
 from review_app.core import DetectionAPI, init_faiss_store
 from review_app.server import create_handler_class
 
-# Default embeddings directory
-EMBEDDINGS_DIR = Path("data/databases/embeddings")
+
+def find_embeddings_dir() -> Path:
+    """
+    Find embeddings directory by checking common locations.
+
+    Returns the first valid path found, with diagnostic output.
+    """
+    # Option 1: Relative to script location (most reliable)
+    script_dir = Path(__file__).parent.parent.parent  # Go up to project root
+    option1 = script_dir / "data" / "databases" / "embeddings"
+
+    # Option 2: Relative to current directory (backwards compatibility)
+    option2 = Path("data/databases/embeddings")
+
+    # Option 3: Absolute path (fallback for this specific setup)
+    option3 = Path(
+        "/Users/kryticyz/Documents/life/CISS/plantNet/data/databases/embeddings"
+    )
+
+    # Check each location
+    for path in [option1, option2, option3]:
+        if path.exists() and (path / "embeddings.index").exists():
+            print(f"✓ Found embeddings at: {path.absolute()}")
+            return path
+
+    # None found - show diagnostic and return default
+    print(f"⚠️  No embeddings found. Searched:")
+    print(f"   1. {option1.absolute()}")
+    print(f"   2. {option2.absolute()}")
+    print(f"   3. {option3.absolute()}")
+    print(f"\n   Tip: Generate embeddings with batch_generate_embeddings.py")
+    print(f"        or specify path with --embeddings flag")
+
+    return option1  # Return first option as default
 
 
-def run_server(base_dir: Path, port: int = 8000):
+# Find embeddings directory at module load time
+EMBEDDINGS_DIR = find_embeddings_dir()
+
+
+def run_server(base_dir: Path, port: int = 8000, embeddings_dir: Path = None):
     """
     Start the duplicate review server.
 
     Args:
         base_dir: Base directory containing species subdirectories
         port: Port to run the server on
+        embeddings_dir: Path to embeddings directory (if None, use auto-detected path)
     """
+    # Use provided path or auto-detected path
+    if embeddings_dir is None:
+        embeddings_dir = EMBEDDINGS_DIR
+
     # Initialize FAISS store if available
-    faiss_store = init_faiss_store(EMBEDDINGS_DIR)
+    faiss_store = init_faiss_store(embeddings_dir)
     if faiss_store:
         print(
             f"✓ Loaded FAISS vector database with {faiss_store.index.ntotal} embeddings"
         )
+        print(f"  Location: {embeddings_dir.absolute()}")
     else:
-        print("ℹ FAISS vector database not available (using on-demand computation)")
+        print("ℹ  FAISS vector database not available (using on-demand computation)")
 
     # Create detection API with caches
     detection_api = DetectionAPI(faiss_store=faiss_store)
@@ -111,6 +153,14 @@ Features:
         help="Port to run the server on (default: 8000)",
     )
 
+    parser.add_argument(
+        "-e",
+        "--embeddings",
+        type=Path,
+        default=None,
+        help="Path to embeddings directory (default: auto-detect)",
+    )
+
     args = parser.parse_args()
 
     # Validate directory
@@ -122,8 +172,8 @@ Features:
         print(f"Error: Not a directory: {args.directory}", file=sys.stderr)
         sys.exit(1)
 
-    # Start the server
-    run_server(args.directory, args.port)
+    # Start the server with optional embeddings path
+    run_server(args.directory, args.port, args.embeddings)
 
 
 if __name__ == "__main__":

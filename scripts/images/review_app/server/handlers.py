@@ -132,6 +132,20 @@ class DuplicateReviewHandler(http.server.BaseHTTPRequestHandler):
                 self.send_json({"error": "Server not properly configured"}, 500)
             return
 
+        # API: Get CNN similarity for all species
+        if path == "/api/similarity/all":
+            threshold = float(query.get("threshold", ["0.85"])[0])
+            model = query.get("model", ["resnet18"])[0]
+
+            if self.detection_api and self.base_dir:
+                result = self.detection_api.get_all_species_cnn_similarity(
+                    self.base_dir, threshold, model
+                )
+                self.send_json(result)
+            else:
+                self.send_json({"error": "Server not properly configured"}, 500)
+            return
+
         # API: Get species duplicates
         if path.startswith("/api/duplicates/"):
             species_name = urllib.parse.unquote(path[16:])

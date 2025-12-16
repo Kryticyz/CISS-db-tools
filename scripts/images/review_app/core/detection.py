@@ -379,6 +379,57 @@ def get_species_cnn_similarity(
     }
 
 
+def get_all_species_cnn_similarity(
+    base_dir: Path,
+    similarity_threshold: float,
+    model_name: str,
+    cnn_cache: Dict,
+    faiss_store: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """
+    Get CNN-based similar image groups across ALL species.
+
+    Returns dict with similar group information for every species.
+    """
+    species_list = get_species_list(base_dir)
+
+    all_results = []
+    total_images = 0
+    total_groups = 0
+    species_with_similarities = 0
+
+    for species_name in species_list:
+        result = get_species_cnn_similarity(
+            base_dir,
+            species_name,
+            similarity_threshold,
+            model_name,
+            cnn_cache,
+            faiss_store,
+        )
+
+        if "error" not in result:
+            species_images = result.get("total_images", 0)
+            total_images += species_images
+            species_groups = len(result.get("similar_groups", []))
+            total_groups += species_groups
+
+            if species_groups > 0:
+                species_with_similarities += 1
+                all_results.append(result)
+
+    return {
+        "mode": "all_species_cnn",
+        "total_species_scanned": len(species_list),
+        "species_with_similarities": species_with_similarities,
+        "total_images": total_images,
+        "total_groups": total_groups,
+        "similarity_threshold": similarity_threshold,
+        "model_name": model_name,
+        "species_results": all_results,
+    }
+
+
 def delete_files(base_dir: Path, file_paths: List[str]) -> Dict[str, Any]:
     """
     Delete the specified files.

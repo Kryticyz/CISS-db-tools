@@ -73,6 +73,21 @@ class DetectionAPI:
             self.faiss_store,
         )
 
+    def get_all_species_cnn_similarity(
+        self,
+        base_dir: Path,
+        similarity_threshold: float,
+        model_name: str = detection.DEFAULT_MODEL,
+    ) -> Dict[str, Any]:
+        """Get CNN-based similar groups across ALL species."""
+        return detection.get_all_species_cnn_similarity(
+            base_dir,
+            similarity_threshold,
+            model_name,
+            self.cnn_cache,
+            self.faiss_store,
+        )
+
     def delete_files(self, base_dir: Path, file_paths: List[str]) -> Dict[str, Any]:
         """Delete the specified files."""
         return detection.delete_files(base_dir, file_paths)

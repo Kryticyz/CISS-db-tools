@@ -158,6 +158,54 @@ def test_species_list():
         return False
 
 
+def test_cnn_all_species_backend():
+    """Test CNN all species backend function exists and has correct signature."""
+    print("\nTesting CNN all species backend...")
+
+    try:
+        import inspect
+
+        from review_app.core import DetectionAPI, get_all_species_cnn_similarity
+
+        # Test function exists
+        print("  ✓ get_all_species_cnn_similarity function exists")
+
+        # Test function signature
+        sig = inspect.signature(get_all_species_cnn_similarity)
+        params = list(sig.parameters.keys())
+        expected_params = [
+            "base_dir",
+            "similarity_threshold",
+            "model_name",
+            "cnn_cache",
+            "faiss_store",
+        ]
+
+        if params == expected_params:
+            print(f"  ✓ Function signature correct")
+        else:
+            print(
+                f"  ✗ Function signature mismatch. Expected {expected_params}, got {params}"
+            )
+            return False
+
+        # Test DetectionAPI has the method
+        api = DetectionAPI()
+        if hasattr(api, "get_all_species_cnn_similarity"):
+            print("  ✓ DetectionAPI has get_all_species_cnn_similarity method")
+        else:
+            print("  ✗ DetectionAPI missing get_all_species_cnn_similarity method")
+            return False
+
+        return True
+    except Exception as e:
+        print(f"  ✗ CNN all species backend test failed: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return False
+
+
 def main():
     """Run all tests."""
     print("=" * 60)
@@ -170,6 +218,7 @@ def main():
         ("HTML Generation", test_html_generation),
         ("Handler Creation", test_handler_creation),
         ("Species List", test_species_list),
+        ("CNN All Species Backend", test_cnn_all_species_backend),
     ]
 
     results = []
