@@ -70,3 +70,7 @@ node_modules/
 
 # robo
 CLAUDE.md
+
+#Large fiels
+dump/*
+data/databases/embeddings/
