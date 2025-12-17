@@ -26,39 +26,42 @@ Author names are automatically stripped:
 
 ```bash
 # Create GBIF database (2-5 minutes for full dataset)
-python src/parse_gbif_db.py --create
+python scripts/data_processing/parse_gbif_db.py --create
+# Or use CLI: plantnet-db-build --create
 
 # Or test with subset (5 seconds)
-python src/parse_gbif_db.py --create --max-rows 10000
+python scripts/data_processing/parse_gbif_db.py --create --max-rows 10000
 
 # Create counts database (< 1 second)
-python src/parse_counts_db.py --create
+python scripts/data_processing/parse_counts_db.py --create
 ```
 
 ### Step 2: Verify Databases
 
 ```bash
 # Check GBIF database
-python src/parse_gbif_db.py --info
+python scripts/data_processing/parse_gbif_db.py --info
 
 # Check counts database
-python src/parse_counts_db.py --info
+python scripts/data_processing/parse_counts_db.py --info
 ```
 
 ### Step 3: Query Data
 
 ```bash
 # Summary of both databases
-python src/query_unified_db.py --summary
+python scripts/database/query_unified_db.py --summary
+# Or use CLI: plantnet-db-query --summary
 
 # Search for species in both databases
-python src/query_unified_db.py --species "Acacia_dealbata"
+python scripts/database/query_unified_db.py --species "Acacia_dealbata"
+# Or use CLI: plantnet-db-query --species "Acacia_dealbata"
 
 # Compare coverage
-python src/query_unified_db.py --compare-coverage
+python scripts/database/query_unified_db.py --compare-coverage
 
 # Top species by combined metric
-python src/query_unified_db.py --top-combined 20
+python scripts/database/query_unified_db.py --top-combined 20
 ```
 
 ## Database Schemas

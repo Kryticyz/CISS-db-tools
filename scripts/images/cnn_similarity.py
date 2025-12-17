@@ -29,8 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-# Image extensions supported
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"}
+from utils import UnionFind, get_image_files
 
 # Default similarity threshold (cosine similarity, 0-1)
 # Higher = more strict (only very similar images)
@@ -69,15 +68,6 @@ class SimilarityResult:
             "group_details": self.group_details,
             "errors": self.errors,
         }
-
-
-def get_image_files(directory: Path) -> List[Path]:
-    """Get all image files in a directory."""
-    image_files = []
-    for file_path in directory.iterdir():
-        if file_path.is_file() and file_path.suffix.lower() in IMAGE_EXTENSIONS:
-            image_files.append(file_path)
-    return sorted(image_files)
 
 
 def load_model(model_name: str = DEFAULT_MODEL):
@@ -272,6 +262,7 @@ def compute_cnn_embeddings_batch(
         from PIL import Image
     except ImportError:
         # Fallback to non-batch version
+        print("Falling back to non-batch version due to import error")
         return compute_cnn_embeddings(image_paths, model_name, verbose)
 
     if verbose:
@@ -397,24 +388,7 @@ def find_similar_groups(
     if exclude_pairs is None:
         exclude_pairs = set()
 
-    # Union-Find
-    parent = list(range(n))
-    rank = [0] * n
-
-    def find(x):
-        if parent[x] != x:
-            parent[x] = find(parent[x])
-        return parent[x]
-
-    def union(x, y):
-        px, py = find(x), find(y)
-        if px == py:
-            return
-        if rank[px] < rank[py]:
-            px, py = py, px
-        parent[py] = px
-        if rank[px] == rank[py]:
-            rank[px] += 1
+    uf = UnionFind(n)
 
     # Compare all pairs
     for i in range(n):
@@ -427,18 +401,10 @@ def find_similar_groups(
 
             similarity = cosine_similarity(embeddings[paths[i]], embeddings[paths[j]])
             if similarity >= threshold:
-                union(i, j)
+                uf.union(i, j)
 
-    # Group by root
-    groups: Dict[int, Set[Path]] = {}
-    for i, path in enumerate(paths):
-        root = find(i)
-        if root not in groups:
-            groups[root] = set()
-        groups[root].add(path)
-
-    # Return only groups with more than one image
-    return [group for group in groups.values() if len(group) > 1]
+    # Convert index groups to path groups
+    return [{paths[i] for i in members} for members in uf.groups_with_multiple()]
 
 
 def analyze_species_similarity(

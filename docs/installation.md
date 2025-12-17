@@ -244,8 +244,8 @@ After installation, verify these work:
 
 Once installed, see:
 - [Quick Start Guide](quickstart.md) - 5-minute tutorial
-- [User Guide](user_guide/) - Detailed usage documentation
-- [README](../README.md) - Project overview
+- [Database Guide](DATABASE_GUIDE.md) - SQLite database usage
+- [README](../README.md) - Project overview and workflows
 
 ## Migrating from Pip
 
@@ -254,9 +254,6 @@ If you previously had a pip-based installation:
 ```bash
 # Remove old virtual environment
 rm -rf .venv/
-
-# Remove old requirements.txt tracking
-git rm requirements.txt
 
 # Follow installation steps above
 conda env create -f environment.yml

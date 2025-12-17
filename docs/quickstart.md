@@ -41,21 +41,22 @@ Download PlantNet data from GBIF:
 
 ```bash
 # Build GBIF database (takes ~10 minutes)
-python scripts/data_processing/parse_gbif_db.py --create
-
-# Or use CLI (coming soon)
 plantnet-db-build --create
+
+# Or use Python directly
+python scripts/data_processing/parse_gbif_db.py --create
 ```
 
 ### 3. Query Species
 
 ```bash
-# Python way
-python scripts/database/query_unified_db.py --summary
-python scripts/database/query_unified_db.py --species "Acacia dealbata"
-
-# CLI way (coming soon)
+# Using CLI
 plantnet-db-query --summary
+plantnet-db-query --species "Acacia_dealbata"
+
+# Or using Python scripts
+python scripts/database/query_unified_db.py --summary
+python scripts/database/query_unified_db.py --species "Acacia_dealbata"
 ```
 
 ### 4. Download Images
@@ -99,11 +100,11 @@ print(f'Found {result.similar_groups} similar groups')
 ### 7. Visual Review Interface
 
 ```bash
-# Start web server
-python scripts/images/review_duplicates.py data/images/by_species
-
-# Or use CLI (coming soon)
+# Start web server using CLI
 plantnet-review data/images/by_species
+
+# Or using the modern FastAPI + React app
+python scripts/images/review_app_v3/main.py data/images/by_species
 
 # Open http://localhost:8000 in browser
 ```
@@ -197,9 +198,9 @@ export PYTORCH_ENABLE_MPS_FALLBACK=1
 
 ## Next Steps
 
-- Read the [User Guide](user_guide/) for detailed documentation
-- Check [Installation Guide](installation.md) for troubleshooting
-- Explore example workflows in `workflows/`
+- Read the [Installation Guide](installation.md) for troubleshooting
+- Check [Database Guide](DATABASE_GUIDE.md) for SQLite database usage
+- See the main [README](../README.md) for common workflows
 
 ## Getting Help
 
