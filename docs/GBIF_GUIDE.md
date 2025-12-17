@@ -26,7 +26,7 @@ The GBIF PlantNet dataset contains biodiversity observations from the PlantNet c
 ```bash
 # Run test suite with 100 rows
 cd plantNet
-python src/test_gbif.py
+python scripts/reports/test_gbif.py
 # Enter: 100
 ```
 
@@ -34,19 +34,19 @@ python src/test_gbif.py
 
 ```bash
 # Display summary statistics
-python query_gbif.py --summary
+python scripts/database/query_gbif.py --summary
 
 # Search for a species
-python query_gbif.py --species "Acacia dealbata"
+python scripts/database/query_gbif.py --species "Acacia_dealbata"
 
 # Get observations from a specific country
-python query_gbif.py --country FR
+python scripts/database/query_gbif.py --country FR
 
 # View a specific observation
-python query_gbif.py --observation 2644196009
+python scripts/database/query_gbif.py --observation 2644196009
 
 # See top contributing users
-python query_gbif.py --top-users 20
+python scripts/database/query_gbif.py --top-users 20
 ```
 
 ## Data Structure

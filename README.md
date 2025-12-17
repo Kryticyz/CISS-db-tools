@@ -1,212 +1,67 @@
-# PlantNet Image Mining Project
+# PlantNet Image Mining Toolkit
 
 A comprehensive toolkit for mining, analyzing, and managing plant species images from PlantNet via GBIF (Global Biodiversity Information Facility) data exports.
 
-**Author:** Tynan Matthews  
+**Author:** Tynan Matthews
 **Email:** tynan@matthews.solutions
 
 ---
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Project Structure](#project-structure)
+- [What is PlantNet?](#what-is-plantnet)
+- [Key Features](#key-features)
 - [Quick Start](#quick-start)
 - [Installation](#installation)
-- [Documentation](#documentation)
+- [Project Structure](#project-structure)
+- [CLI Reference](#cli-reference)
+- [Image Processing Pipeline](#image-processing-pipeline)
 - [Common Workflows](#common-workflows)
+- [Python API Usage](#python-api-usage)
+- [Architecture](#architecture)
+- [Testing](#testing)
+- [Documentation](#documentation)
 - [Contributing](#contributing)
+- [License & Resources](#license--resources)
 
 ---
 
-## Overview
+## What is PlantNet?
 
-This project provides tools to:
+[PlantNet](https://plantnet.org) is a citizen science platform where users upload photos of plants for identification. These observations are shared with [GBIF](https://www.gbif.org) (Global Biodiversity Information Facility), creating one of the largest open plant image datasets available.
 
-- **Parse GBIF PlantNet data** exports (occurrence and multimedia records)
-- **Build SQLite databases** for fast querying of species observations and images
-- **Extract image URLs** for specific plant species
-- **Download images** in batch with species organization
-- **Analyze image counts** and data coverage
-- **Find synonyms** for species names using GBIF taxonomy
-- **Generate reports** on species data availability
-
-The toolkit is designed for researchers, data scientists, and developers working with plant biodiversity data and computer vision datasets.
+This toolkit helps you:
+- Download and organize PlantNet images by species
+- Remove duplicate images using perceptual hashing
+- Find visually similar images using CNN embeddings
+- Detect outlier images that may be misclassified
+- Visually review results through a web interface
 
 ---
 
-## Project Structure
+## Key Features
 
-```
-plantNet/
-├── README.md                          # This file
-├── requirements.txt                   # Python dependencies
-├── .gitignore                         # Git ignore rules
-│
-├── docs/                              # Documentation
-│   ├── DATABASE_GUIDE.md              # SQLite database usage
-│   ├── GBIF_GUIDE.md                  # GBIF data parser guide
-│   ├── COUNTS_PARSER.md               # Image count parser
-│   ├── LOW_COUNT_SPECIES.md           # Low count species workflow
-│   └── EXTRACT_DIRECTORIES.md         # Directory extraction tool
-│
-├── scripts/                           # Executable scripts
-│   ├── data_processing/               # Data parsing and DB creation
-│   │   ├── parse_counts.py            # Parse CSV image counts
-│   │   ├── parse_counts_db.py         # Build counts database
-│   │   ├── parse_gbif.py              # Parse GBIF text files
-│   │   └── parse_gbif_db.py           # Build GBIF database
-│   │
-│   ├── database/                      # Database queries
-│   │   ├── query_counts.py            # Query image counts
-│   │   ├── query_gbif.py              # Query GBIF data
-│   │   ├── query_unified_db.py        # Query both databases
-│   │   ├── query_low_count_species.py # Find low-count species
-│   │   └── low_count_species_query.sql # SQL query template
-│   │
-│   ├── synonyms/                      # Species synonym tools
-│   │   ├── find_synonyms.py           # Find synonyms using LLM (not recommended)
-│   │   ├── find_synonyms_gbif.py      # Find synonyms via GBIF API
-│   │   └── check_synonyms.sh          # Check synonym mismatches
-│   │
-│   ├── images/                        # Image download tools
-│   │   ├── download_image.py          # Download single image
-│   │   ├── batch_download_images.py   # Batch download by species
-│   │   ├── get_species_urls.py        # Get URLs for one species
-│   │   └── batch_get_species_urls.py  # Get URLs for multiple species
-│   │
-│   ├── directories/                   # Directory utilities
-│   │   └── extract_directories.sh     # Extract directory names from CSV
-│   │
-│   └── reports/                       # Report generation
-│       ├── generate_report_v3.py      # Species analysis report
-│       └── test_gbif.py               # GBIF parser tests
-│
-└── data/                              # Data files (gitignored)
-    ├── raw/                           # Original source data
-    │   └── gbif/                      # GBIF export files
-    │       ├── multimedia.txt         # Image metadata (~3.2M records)
-    │       ├── occurrence.txt         # Observations (~2.6M records)
-    │       └── ...                    # Other GBIF files
-    │
-    ├── processed/                     # Processed/transformed data
-    │   ├── counts/                    # Image count CSV files
-    │   │   ├── original_image_counts.csv
-    │   │   ├── cleaned_checked_image_counts.csv
-    │   │   └── cleaned_unchecked_image_counts.csv
-    │   │
-    │   ├── species_urls/              # URL files by species
-    │   │   ├── Acacia_dealbata_urls.txt
-    │   │   └── ...
-    │   │
-    │   └── synonyms/                  # Species synonym data
-    │       ├── species_synonyms_gbif.csv
-    │       ├── species_synonyms_gbif.json
-    │       └── species_synonyms_gbif.txt
-    │
-    ├── databases/                     # SQLite databases
-    │   ├── plantnet_gbif.db          # GBIF observations & images
-    │   └── plantnet_counts.db        # Local image counts
-    │
-    ├── images/                        # Downloaded images
-    │   ├── by_species/               # Organized by species
-    │   │   ├── Acacia_dealbata/
-    │   │   └── ...
-    │   └── uncategorized/            # Loose images
-    │
-    └── reports/                       # Generated reports & outputs
-        ├── FINAL_REPORT_v3.md
-        ├── species_report_v3.csv
-        ├── species_list.txt
-        └── ...
-```
+- **Parse GBIF Data** - Load and query PlantNet observation and multimedia records
+- **Build SQLite Databases** - Fast local querying of millions of records
+- **Batch Image Downloads** - Rate-limited parallel downloading with species organization
+- **Duplicate Detection** - Find exact and near-duplicate images using perceptual hashing
+- **Similarity Analysis** - CNN-based image similarity using ResNet embeddings and FAISS
+- **Outlier Detection** - Statistical analysis to find potentially misclassified images
+- **Visual Review** - Modern web interface (FastAPI + React) for reviewing results
+- **CLI Tools** - Full command-line interface for all operations
 
 ---
 
 ## Quick Start
 
-### 1. Install Dependencies
+### Prerequisites
+- macOS 10.15+ (Apple Silicon or Intel)
+- Conda/Miniconda
+- 40 GB free disk space
+
+### 1. Clone and Install
 
 ```bash
-# Create virtual environment (recommended)
-python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install requirements
-pip install -r requirements.txt
-```
-
-### 2. Download GBIF Data
-
-Download PlantNet data from GBIF:
-1. Visit https://www.gbif.org
-2. Search for "PlantNet" dataset
-3. Download the Darwin Core Archive
-4. Extract to `data/raw/gbif/`
-
-**Note:** GBIF data cannot be redistributed, so each user must download their own copy.
-
-### 3. Build Databases
-
-```bash
-# Activate environment
-conda activate plantnet
-
-# Build GBIF database (10 minutes for full dataset)
-plantnet-db-build --create
-
-# Or use Python directly
-python scripts/data_processing/parse_gbif_db.py --create
-```
-
-### 4. Query Data
-
-```bash
-# Summary of databases
-plantnet-db-query --summary
-
-# Search for a specific species
-plantnet-db-query --species "Acacia_dealbata"
-
-# Or use Python scripts directly
-python scripts/database/query_unified_db.py --summary
-```
-
-### 5. Download Images
-
-```bash
-# Download images for a species
-plantnet-download "Acacia_dealbata" --limit 100
-
-# Or use batch workflows
-python workflows/batch/batch_download.py
-```
-
-### 6. Deduplicate Images
-
-```bash
-# Remove duplicate images
-plantnet-deduplicate data/images/by_species/Acacia_dealbata
-
-# Visual review interface
-plantnet-review data/images/by_species
-# Open http://localhost:8000 in your browser
-```
-
----
-
-## Installation
-
-### Requirements
-
-- **macOS 10.15+** (Apple Silicon or Intel)
-- **Conda/Miniconda/Mamba** - For package management
-- **40 GB free disk space** - For data storage
-
-### Quick Install
-
-```bash
-# Clone repository
 git clone https://github.com/yourusername/plantnet.git
 cd plantnet
 
@@ -217,66 +72,288 @@ conda activate plantnet
 # Install package
 pip install -e .
 
-# Verify
+# Verify installation
 plantnet --version
 ```
 
-See [Installation Guide](docs/installation.md) for detailed instructions and troubleshooting.
+### 2. Download GBIF Data
 
-### Why Conda?
+1. Visit https://www.gbif.org
+2. Search for "PlantNet" dataset
+3. Download the Darwin Core Archive
+4. Extract to `data/raw/gbif/`
 
-This project now uses **conda** instead of pip to solve critical issues:
+> **Note:** GBIF data cannot be redistributed. Each user must download their own copy.
 
-✅ **Eliminates OpenMP conflicts** - Single unified library for PyTorch, NumPy, FAISS  
-✅ **Fixes Python 3.13 MPS crashes** - Uses stable Python 3.11  
-✅ **Better dependency management** - Conda resolves complex C++ library dependencies  
-
-Previous pip installations had multiple `libomp.dylib` conflicts causing crashes. Conda solves this automatically.
-
-### Migrating from Pip
-
-If you have an existing pip installation:
+### 3. Build Database
 
 ```bash
-# Remove old environment
-rm -rf .venv/
-
-# Follow Quick Install steps above
+plantnet-db-build --create
+# Or: python scripts/data_processing/parse_gbif_db.py --create
 ```
 
-Your data directory remains unchanged.
-
-### Python Packages
+### 4. Query and Download Images
 
 ```bash
-pip install -r requirements.txt
+# Query database
+plantnet-db-query --summary
+plantnet-db-query --species "Acacia_dealbata"
+
+# Download images for a species
+plantnet-download "Acacia_dealbata" --limit 100
 ```
 
-**Required packages:**
-- `requests` - For downloading images and GBIF API calls
-- Standard library only for core functionality
+### 5. Process and Review Images
+
+```bash
+# Deduplicate images
+plantnet-deduplicate data/images/by_species/Acacia_dealbata
+
+# Start visual review interface
+plantnet-review data/images/by_species
+# Open http://localhost:8000 in your browser
+```
 
 ---
 
-## Documentation
+## Installation
 
-Detailed guides (generated via LLMs) are available in the `docs/` directory:
+### Quick Install (Conda)
 
-- **[DATABASE_GUIDE.md](docs/DATABASE_GUIDE.md)** - Complete guide to SQLite database tools
-- **[GBIF_GUIDE.md](docs/GBIF_GUIDE.md)** - Working with GBIF PlantNet data
-- **[COUNTS_PARSER.md](docs/COUNTS_PARSER.md)** - Parsing image count CSV files
-- **[LOW_COUNT_SPECIES.md](docs/LOW_COUNT_SPECIES.md)** - Finding species with low image counts
-- **[EXTRACT_DIRECTORIES.md](docs/EXTRACT_DIRECTORIES.md)** - Directory name extraction utilities
+```bash
+conda env create -f environment.yml
+conda activate plantnet
+pip install -e .
+```
+
+### Why Conda?
+
+This project uses **conda** to solve critical dependency issues:
+
+- **Eliminates OpenMP conflicts** - Single unified library for PyTorch, NumPy, and FAISS
+- **Fixes Python 3.13 MPS crashes** - Uses stable Python 3.11
+- **Better dependency management** - Conda resolves complex C++ library dependencies
+
+See [Installation Guide](docs/installation.md) for detailed instructions and troubleshooting.
+
+### System Requirements
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| OS | macOS 10.15+ | macOS 12+ |
+| RAM | 8 GB | 16 GB |
+| Disk | 40 GB free | 100 GB free |
+| Python | 3.11 (via conda) | 3.11 |
+
+---
+
+## Project Structure
+
+```
+plantNet/
+├── README.md                          # This file
+├── CLAUDE.md                          # AI assistant guidance
+├── environment.yml                    # Conda environment specification
+├── pyproject.toml                     # Package configuration and CLI entry points
+│
+├── src/plantnet/                      # Installable Python package
+│   ├── cli/                           # Command-line interface
+│   │   ├── main.py                    # Main CLI dispatcher
+│   │   ├── database_cmds.py           # Database CLI commands
+│   │   ├── image_cmds.py              # Image CLI commands
+│   │   └── analysis_cmds.py           # Analysis CLI commands
+│   ├── core/                          # Core functionality
+│   │   └── gbif_parser.py             # GBIF data parser
+│   ├── images/                        # Image processing modules
+│   │   ├── deduplication.py           # Perceptual hash deduplication
+│   │   └── similarity.py              # CNN similarity analysis
+│   ├── database/                      # Database operations
+│   ├── web/                           # Web review application
+│   └── utils/                         # Shared utilities
+│       └── paths.py                   # Path configuration
+│
+├── scripts/                           # Standalone executable scripts
+│   ├── data_processing/               # Data parsing and DB creation
+│   │   ├── parse_gbif_db.py           # Build GBIF SQLite database
+│   │   └── parse_counts_db.py         # Build image counts database
+│   │
+│   ├── database/                      # Database query tools
+│   │   ├── query_unified_db.py        # Query both databases
+│   │   ├── query_gbif.py              # Query GBIF data
+│   │   ├── query_counts.py            # Query image counts
+│   │   └── query_low_count_species.py # Find low-count species
+│   │
+│   ├── images/                        # Image operations
+│   │   ├── batch_download_images.py   # Batch download with rate limiting
+│   │   ├── batch_get_species_urls.py  # Extract URLs for species
+│   │   ├── deduplicate_images.py      # Perceptual hash deduplication
+│   │   ├── cnn_similarity.py          # CNN-based similarity detection
+│   │   ├── batch_generate_embeddings.py # Pre-compute embeddings
+│   │   ├── detect_outliers.py         # Statistical outlier detection
+│   │   │
+│   │   ├── review_app/                # Core detection modules
+│   │   │   └── core/
+│   │   │       ├── api.py             # High-level DetectionAPI
+│   │   │       ├── detection.py       # Detection algorithms
+│   │   │       └── storage.py         # FAISS embedding store
+│   │   │
+│   │   └── review_app_v3/             # Modern web application
+│   │       ├── main.py                # FastAPI application
+│   │       ├── api/                   # REST API routes
+│   │       ├── services/              # Business logic layer
+│   │       ├── models/                # Pydantic models
+│   │       └── frontend/              # React frontend
+│   │
+│   ├── synonyms/                      # Species synonym tools
+│   │   └── find_synonyms_gbif.py      # GBIF API synonym resolution
+│   │
+│   └── reports/                       # Report generation
+│       └── generate_report_v3.py      # Species analysis reports
+│
+├── docs/                              # Documentation
+│   ├── installation.md                # Detailed installation guide
+│   ├── quickstart.md                  # 5-minute quick start
+│   ├── DATABASE_GUIDE.md              # SQLite database usage
+│   ├── GBIF_GUIDE.md                  # GBIF data guide
+│   └── ...
+│
+├── tests/                             # Test suite
+│   ├── test_core/                     # Core module tests
+│   ├── test_images/                   # Image processing tests
+│   └── ...
+│
+└── data/                              # Data files (gitignored)
+    ├── raw/gbif/                      # GBIF export files
+    │   ├── multimedia.txt             # Image metadata (~3.2M records)
+    │   └── occurrence.txt             # Observations (~2.6M records)
+    ├── databases/                     # SQLite databases
+    │   ├── plantnet_gbif.db           # GBIF data
+    │   ├── plantnet_counts.db         # Image counts
+    │   └── embeddings/                # FAISS indices
+    ├── processed/                     # Processed data
+    │   ├── species_urls/              # URL files by species
+    │   └── synonyms/                  # Synonym mappings
+    └── images/by_species/             # Downloaded images
+```
+
+---
+
+## CLI Reference
+
+All CLI tools are installed via `pip install -e .`:
+
+| Command | Description |
+|---------|-------------|
+| `plantnet` | Main CLI with subcommands |
+| `plantnet-db-build` | Build SQLite databases from GBIF data |
+| `plantnet-db-query` | Query databases for species and statistics |
+| `plantnet-download` | Download images for species |
+| `plantnet-deduplicate` | Find and mark duplicate images |
+| `plantnet-embeddings` | Generate CNN embeddings for similarity search |
+| `plantnet-review` | Start visual review web interface |
+
+### Examples
+
+```bash
+# Database operations
+plantnet-db-build --create                    # Build GBIF database
+plantnet-db-query --summary                   # Database statistics
+plantnet-db-query --species "Acacia_dealbata" # Search species
+
+# Image operations
+plantnet-download "Acacia_dealbata" --limit 100
+plantnet-deduplicate data/images/by_species/Acacia_dealbata
+plantnet-embeddings data/images/by_species/ --batch
+
+# Review interface
+plantnet-review data/images/by_species --port 8000
+```
+
+Use `--help` with any command for detailed options.
+
+---
+
+## Image Processing Pipeline
+
+The toolkit provides a complete pipeline for image curation:
+
+```
+Download → Embed → Deduplicate → Find Similar → Detect Outliers → Review
+```
+
+### 1. Download Images
+
+```bash
+# Get URLs from GBIF database
+python scripts/images/batch_get_species_urls.py species_list.txt --limit 400
+
+# Download with rate limiting
+python scripts/images/batch_download_images.py --workers 5 --delay 1
+```
+
+### 2. Generate Embeddings (Optional)
+
+Pre-computing embeddings speeds up similarity search:
+
+```bash
+python scripts/images/batch_generate_embeddings.py data/images/by_species/
+```
+
+Embeddings are stored in `data/databases/embeddings/` for instant reuse.
+
+### 3. Detect Duplicates
+
+Uses perceptual hashing (pHash, dHash, aHash) to find exact and near-duplicates:
+
+```bash
+plantnet-deduplicate data/images/by_species/Acacia_dealbata --threshold 5
+```
+
+### 4. Find Similar Images
+
+Uses ResNet CNN embeddings and FAISS for fast similarity search:
+
+```bash
+python scripts/images/cnn_similarity.py data/images/by_species/Acacia_dealbata --threshold 0.85
+```
+
+### 5. Detect Outliers
+
+Statistical analysis to find images that don't fit the species:
+
+```bash
+python scripts/images/detect_outliers.py data/images/by_species/Acacia_dealbata
+```
+
+### 6. Visual Review
+
+Web interface for reviewing all detection results:
+
+```bash
+# Modern FastAPI + React interface
+python scripts/images/review_app_v3/main.py data/images/by_species
+
+# Or legacy interface
+plantnet-review data/images/by_species
+```
+
+Open http://localhost:8000 to:
+- View duplicate groups
+- Review similar image clusters
+- Examine detected outliers
+- Queue images for deletion
 
 ---
 
 ## Common Workflows
 
-### Workflow 1: Complete Setup from Scratch
+### Workflow 1: Setup from Scratch
 
 ```bash
-# 1. Install dependencies
-pip install -r requirements.txt
+# 1. Create environment
+conda env create -f environment.yml
+conda activate plantnet
+pip install -e .
 
 # 2. Place GBIF data in data/raw/gbif/
 
@@ -284,92 +361,131 @@ pip install -r requirements.txt
 python scripts/data_processing/parse_gbif_db.py --create
 python scripts/data_processing/parse_counts_db.py --create
 
-# 4. Verify data
-python scripts/database/query_unified_db.py --summary
+# 4. Verify
+plantnet-db-query --summary
 ```
 
-### Workflow 2: Find and Download Images for Species
+### Workflow 2: Process New Species
 
 ```bash
-# 1. Create species list (or use existing)
-echo "Acacia_dealbata" > data/reports/species_list.txt
-echo "Eucalyptus_globulus" >> data/reports/species_list.txt
+# 1. Create species list
+echo "Eucalyptus_globulus" > species_list.txt
 
-# 2. Get image URLs from GBIF
-python scripts/images/batch_get_species_urls.py data/reports/species_list.txt --limit 400
-
-# 3. Download images - We found success using 400 workers but ran into timeout errors at 900+, your results will depend on your network connection and computers available resources
+# 2. Get URLs and download
+python scripts/images/batch_get_species_urls.py species_list.txt --limit 400
 python scripts/images/batch_download_images.py --workers 5 --delay 1
+
+# 3. Deduplicate
+plantnet-deduplicate data/images/by_species/Eucalyptus_globulus
+
+# 4. Review
+plantnet-review data/images/by_species
 ```
 
-### Workflow 3: Analyze Species Coverage
+### Workflow 3: Full Image Curation
 
 ```bash
-# Compare coverage between GBIF and local counts
+# 1. Generate embeddings for fast similarity search
+python scripts/images/batch_generate_embeddings.py data/images/by_species/
+
+# 2. Start review app (detects duplicates, similar, and outliers)
+python scripts/images/review_app_v3/main.py data/images/by_species
+
+# 3. Review and curate in browser at http://localhost:8000
+```
+
+### Workflow 4: Analyze Coverage
+
+```bash
+# Compare GBIF vs local image counts
 python scripts/database/query_unified_db.py --compare-coverage --limit 50
 
-# Find species with low image counts
-python scripts/database/query_low_count_species.py --threshold 400 --output low_count.csv
+# Find species needing more images
+python scripts/database/query_low_count_species.py --threshold 400
 
-# Generate comprehensive report
+# Generate report
 python scripts/reports/generate_report_v3.py
-```
-
-### Workflow 4: Find Synonyms for Species
-
-```bash
-# Find species without images
-python scripts/synonyms/find_synonyms_gbif.py data/reports/no_images.txt
-
-# Check for mismatches
-bash scripts/synonyms/check_synonyms.sh
 ```
 
 ---
 
-## Script Usage Examples
+## Python API Usage
 
-### Query GBIF Data
+Use PlantNet as a library in your own code:
 
-```bash
-# Show summary statistics
-python scripts/database/query_gbif.py --summary
+```python
+# Parse GBIF data
+from plantnet import GBIFParser
 
-# Search for species
-python scripts/database/query_gbif.py --species "Acacia dealbata" --show-images
+parser = GBIFParser()
+parser.load_all()
+multimedia = parser.get_multimedia()
+print(f"Loaded {len(multimedia)} multimedia records")
 
-# Filter by country
-python scripts/database/query_gbif.py --country FR --top-species 20
+# Deduplicate images
+from plantnet.images import deduplicate_species_images
 
-# View specific observation
-python scripts/database/query_gbif.py --observation 2644196009
+result = deduplicate_species_images(
+    species_directory="data/images/by_species/Acacia_dealbata",
+    hamming_threshold=5,
+    verbose=True
+)
+print(f"Total: {result.total_images}, Duplicates: {result.duplicates_marked}")
+
+# Find similar images
+from plantnet.images import analyze_species_similarity
+
+result = analyze_species_similarity(
+    species_directory="data/images/by_species/Acacia_dealbata",
+    similarity_threshold=0.85
+)
+print(f"Found {result.similar_groups} similar groups")
+
+# Use detection API directly
+from scripts.images.review_app.core.api import DetectionAPI
+
+api = DetectionAPI("data/images/by_species")
+duplicates = api.get_duplicate_groups("Acacia_dealbata")
+similar = api.get_similar_groups("Acacia_dealbata", threshold=0.85)
+outliers = api.get_outliers("Acacia_dealbata")
 ```
 
-### Query Image Counts
+---
 
-```bash
-# Show summary
-python scripts/database/query_counts.py --summary
+## Architecture
 
-# Search directories
-python scripts/database/query_counts.py --search "Acacia"
+### Package vs Scripts
 
-# Top species by count
-python scripts/database/query_counts.py --top 20 --dataset checked
+- **`src/plantnet/`** - Installable package with CLI entry points. Import with `from plantnet import ...`
+- **`scripts/`** - Standalone scripts for batch operations. Run directly with `python scripts/...`
+
+### Review App Versions
+
+- **review_app_v3** (Modern) - FastAPI backend + React frontend. Full-featured with deletion queue
+- **review_app** (Core) - Detection modules used by both versions
+- **review_duplicates_v2.py** (Legacy) - Simple single-file web server
+
+### Data Flow
+
 ```
-
-### Download Images
-
-```bash
-# Single species
-python scripts/images/get_species_urls.py "Acacia dealbata" --limit 400 > acacia_urls.txt
-
-# Batch download with options
-python scripts/images/batch_download_images.py \
-  --workers 10 \
-  --delay 1 \
-  --limit 50 \
-  --output data/images/by_species
+GBIF Export → parse_gbif_db.py → SQLite Database
+                                       ↓
+                              batch_get_species_urls.py
+                                       ↓
+                              batch_download_images.py
+                                       ↓
+                              Images organized by species
+                                       ↓
+              ┌────────────────────────┼────────────────────────┐
+              ↓                        ↓                        ↓
+    deduplicate_images.py    cnn_similarity.py        detect_outliers.py
+    (perceptual hashing)     (CNN + FAISS)            (statistical)
+              ↓                        ↓                        ↓
+              └────────────────────────┼────────────────────────┘
+                                       ↓
+                              review_app_v3 (web UI)
+                                       ↓
+                              Curated image dataset
 ```
 
 ---
@@ -377,9 +493,17 @@ python scripts/images/batch_download_images.py \
 ## Testing
 
 ```bash
-# Test GBIF parser with small dataset
-python scripts/reports/test_gbif.py
-# Enter max rows when prompted (e.g., 1000)
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/test_imports.py
+
+# Run with coverage
+pytest --cov=plantnet --cov-report=term-missing
+
+# Run image processing tests
+pytest scripts/images/tests/
 
 # Test database creation with subset
 python scripts/data_processing/parse_gbif_db.py --create --max-rows 10000
@@ -387,41 +511,57 @@ python scripts/data_processing/parse_gbif_db.py --create --max-rows 10000
 
 ---
 
-## Contributing
+## Documentation
 
-This is a research project. If you find bugs or have suggestions:
+Detailed guides are available in `docs/`:
 
-1. Document the issue with reproducible steps
-2. Check if paths are correctly configured for your setup
-3. Ensure you're running from the project root directory
-4. If still not resolved, open a github issue on this repo outlining the steps to reproduce. You are welcome to submit a pull request if you have fixed the issue yourself.
+| Guide | Description |
+|-------|-------------|
+| [Installation Guide](docs/installation.md) | Detailed setup and troubleshooting |
+| [Quick Start](docs/quickstart.md) | 5-minute tutorial |
+| [Database Guide](docs/DATABASE_GUIDE.md) | SQLite database usage |
+| [GBIF Guide](docs/GBIF_GUIDE.md) | Working with GBIF data |
+| [Counts Parser](docs/COUNTS_PARSER.md) | Image count CSV parsing |
+| [Low Count Species](docs/LOW_COUNT_SPECIES.md) | Finding species with few images |
 
 ---
 
-## License
+## Contributing
+
+This is a research project. To contribute:
+
+1. Document issues with reproducible steps
+2. Ensure paths are correctly configured for your setup
+3. Run from the project root directory
+4. Run tests before submitting: `pytest`
+5. Format code: `black .` and `ruff check .`
+
+Open a GitHub issue or submit a pull request.
+
+---
+
+## License & Resources
 
 This toolkit is provided as-is for educational and research purposes.
 
 **Important:** GBIF data has its own licensing. Always check and respect the licenses of individual observations and images. Most PlantNet images are under Creative Commons licenses (CC-BY, CC-BY-SA, etc.).
 
----
+### Resources
 
-## Resources
-
-- **GBIF Website:** https://www.gbif.org
-- **PlantNet:** https://plantnet.org
-- **PlantNet on GBIF:** https://www.gbif.org/dataset/7a3679ef-5582-4aaa-81f0-8c2545cafc81
+- [GBIF Website](https://www.gbif.org)
+- [PlantNet](https://plantnet.org)
+- [PlantNet on GBIF](https://www.gbif.org/dataset/7a3679ef-5582-4aaa-81f0-8c2545cafc81)
 
 ---
 
 ## Tips
 
-1. **Always run scripts from the project root** - Path references assume you're in the `plantNet/` directory
-2. **Use virtual environments** - Keeps dependencies isolated
-3. **Start with small datasets** - Use `--max-rows` options when testing
+1. **Always run from project root** - Path references assume you're in the `plantNet/` directory
+2. **Use conda environment** - Always `conda activate plantnet` before running commands
+3. **Start with small datasets** - Use `--max-rows` and `--limit` options when testing
 4. **Be nice to servers** - Use `--delay` and reasonable `--workers` counts when downloading
-5. **Check documentation** - Each script has `--help` for detailed options
+5. **Check CLI help** - Every command has `--help` for detailed options
 
 ---
 
-**Last Updated:** 2025
+**Last Updated:** December 2025
